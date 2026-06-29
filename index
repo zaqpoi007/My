@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Controle de Estoque Kanban</title>
+
+  <link rel="preconnect" href="https://api.fontshare.com">
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+      --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+      --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+      --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 0.75rem;
+      --space-4: 1rem;
+      --space-5: 1.25rem;
+      --space-6: 1.5rem;
+      --space-8: 2rem;
+      --space-10: 2.5rem;
+      --space-12: 3rem;
+
+      --color-bg: #f7f6f2;
+      --color-surface: #ffffff;
+      --color-surface-2: #f3f0ec;
+      --color-border: #d4d1ca;
+      --color-text: #28251d;
+      --color-text-muted: #6f6b63;
+      --color-primary: #01696f;
+      --color-primary-hover: #0c4e54;
+      --color-success: #437a22;
+      --color-warning: #964219;
+      --color-error: #a13544;
+      --color-focus: rgba(1, 105, 111, 0.18);
+
+      --radius-sm: 0.5rem;
+      --radius-md: 0.75rem;
+      --radius-lg: 1rem;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md: 0 10px 30px rgba(0,0,0,0.08);
+
+      --font-body: 'Satoshi', Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      min-height: 100%;
+    }
+
+    body {
+      font-family: var(--font-body);
+      font-size: var(--text-base);
+      line-height: 1.5;
+      background:
+        linear-gradient(180deg, #f7f6f2 0%, #efebe5 100%);
+      color: var(--color-text);
+      padding: var(--space-4);
+    }
+
+    .page {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: var(--space-8) 0;
+    }
+
+    .card {
+      background: var(--color-surface);
+      border: 1px solid rgba(40, 37, 29, 0.12);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: var(--space-8);
+      background: linear-gradient(135deg, #01696f 0%, #0f3638 100%);
+      color: #fff;
+    }
+
+    .eyebrow {
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.85;
+      margin-bottom: var(--space-2);
+    }
+
+    h1 {
+      font-size: var(--text-xl);
+      line-height: 1.1;
+      margin-bottom: var(--space-2);
+    }
+
+    .subtitle {
+      color: rgba(255,255,255,0.88);
+      max-width: 48ch;
+    }
+
+    .card-body {
+      padding: var(--space-8);
+      display: grid;
+      gap: var(--space-6);
+    }
+
+    .prefill-banner {
+      display: none;
+      background: #e7f4f4;
+      border: 1px solid rgba(1, 105, 111, 0.16);
+      color: var(--color-primary);
+      padding: var(--space-4);
+      border-radius: var(--radius-md);
+      font-size: var(--text-sm);
+    }
+
+    .prefill-banner.show {
+      display: block;
+    }
+
+    .grid {
+      display: grid;
+      gap: var(--space-5);
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .field {
+      display: grid;
+      gap: var(--space-2);
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      font-size: var(--text-sm);
+      font-weight: 700;
+      color: var(--color-text);
+    }
+
+    .hint {
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+      margin-top: -2px;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      background: #fff;
+      padding: 0 var(--space-4);
+      font: inherit;
+      color: var(--color-text);
+      transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+    }
+
+    textarea {
+      min-height: 110px;
+      padding: var(--space-4);
+      resize: vertical;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 4px var(--color-focus);
+    }
+
+    .qty-wrap {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: var(--space-3);
+      align-items: end;
+    }
+
+    .qty-btn {
+      min-width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--color-border);
+      background: var(--color-surface-2);
+      font-size: 1.25rem;
+      cursor: pointer;
+      transition: 180ms ease;
+    }
+
+    .qty-btn:hover {
+      background: #e7e2dc;
+    }
+
+    .section-title {
+      font-size: var(--text-sm);
+      font-weight: 700;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: calc(var(--space-2) * -1);
+    }
+
+    .quick-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+    }
+
+    .chip {
+      border: 1px solid rgba(40, 37, 29, 0.12);
+      background: #fff;
+      color: var(--color-text);
+      border-radius: 999px;
+      padding: 0.7rem 1rem;
+      font-size: var(--text-sm);
+      cursor: pointer;
+      transition: 180ms ease;
+    }
+
+    .chip:hover,
+    .chip.active {
+      background: var(--color-primary);
+      color: #fff;
+      border-color: var(--color-primary);
+    }
+
+    .actions {
+      display: flex;
+      gap: var(--space-3);
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      min-height: 50px;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 0 var(--space-5);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: 180ms ease;
+    }
+
+    .btn-primary {
+      background: var(--color-primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--color-primary-hover);
+    }
+
+    .btn-secondary {
+      background: var(--color-surface-2);
+      color: var(--color-text);
+      border: 1px solid rgba(40, 37, 29, 0.12);
+    }
+
+    .footer-note {
+      font-size: var(--text-xs);
+      color: var(--color-text-muted);
+    }
+
+    .status-box {
+      display: none;
+      padding: var(--space-4);
+      border-radius: var(--radius-md);
+      font-size: var(--text-sm);
+      font-weight: 500;
+    }
+
+    .status-box.show {
+      display: block;
+    }
+
+    .status-box.success {
+      background: #ebf5e5;
+      color: var(--color-success);
+      border: 1px solid rgba(67, 122, 34, 0.18);
+    }
+
+    @media (max-width: 640px) {
+      .card-header,
+      .card-body {
+        padding: var(--space-6);
+      }
+
+      .grid,
+      .qty-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .actions .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="card">
+      <header class="card-header">
+        <div class="eyebrow">Kanban · Retirada de estoque</div>
+        <h1>Controle de retirada</h1>
+        <p class="subtitle">
+          Informe o local, item, modelo e quantidade retirada. A página também pode ser aberta por QR Code com os dados já preenchidos.
+        </p>
+      </header>
+
+      <div class="card-body">
+        <div id="prefillBanner" class="prefill-banner">
+          Dados carregados automaticamente a partir do QR Code.
+        </div>
+
+        <div class="section-title">Dados da retirada</div>
+
+        <form id="estoqueForm">
+          <div class="grid">
+            <div class="field full">
+              <label for="local">Local</label>
+              <select id="local" name="local" required>
+                <option value="">Selecione o local</option>
+                <option value="Usinas 1 a 4">Usinas 1 a 4</option>
+                <option value="Usinas 5 a 7">Usinas 5 a 7</option>
+                <option value="Usina 8">Usina 8</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="item">Item</label>
+              <select id="item" name="item" required>
+                <option value="">Selecione o item</option>
+                <option value="Cartão digital">Cartão digital</option>
+                <option value="Cartão analógico">Cartão analógico</option>
+                <option value="Fonte de alimentação">Fonte de alimentação</option>
+                <option value="Rádio">Rádio</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="modelo">Modelo</label>
+              <select id="modelo" name="modelo" required>
+                <option value="">Selecione o modelo</option>
+                <option value="AI830">AI830</option>
+                <option value="DI845">DI845</option>
+                <option value="IE-2000">IE-2000</option>
+              </select>
+            </div>
+
+            <div class="field full">
+              <label for="quantidade">Quantidade</label>
+              <div class="qty-wrap">
+                <input
+                  id="quantidade"
+                  name="quantidade"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value="1"
+                  required
+                />
+                <button class="qty-btn" type="button" id="decreaseQty" aria-label="Diminuir quantidade">-</button>
+                <button class="qty-btn" type="button" id="increaseQty" aria-label="Aumentar quantidade">+</button>
+              </div>
+              <div class="hint">Exemplo: 1, 2, 10 itens.</div>
+            </div>
+
+            <div class="field full">
+              <label for="observacao">Observação</label>
+              <textarea
+                id="observacao"
+                name="observacao"
+                placeholder="Campo opcional para observações da retirada"
+              ></textarea>
+            </div>
+          </div>
+
+          <div style="height: 24px;"></div>
+
+          <div class="section-title">Atalhos rápidos</div>
+          <div style="height: 12px;"></div>
+
+          <div class="quick-list">
+            <button type="button" class="chip" data-fill-item="Cartão digital">Cartão digital</button>
+            <button type="button" class="chip" data-fill-item="Cartão analógico">Cartão analógico</button>
+            <button type="button" class="chip" data-fill-item="Fonte de alimentação">Fonte de alimentação</button>
+            <button type="button" class="chip" data-fill-item="Rádio">Rádio</button>
+          </div>
+
+          <div style="height: 24px;"></div>
+
+          <div id="statusBox" class="status-box success">
+            Registro pronto para envio.
+          </div>
+
+          <div class="actions">
+            <button type="submit" class="btn btn-primary">Registrar retirada</button>
+            <button type="button" id="clearBtn" class="btn btn-secondary">Limpar campos</button>
+          </div>
+
+          <div style="height: 16px;"></div>
+
+          <p class="footer-note">
+            Depois vamos conectar este formulário ao Web Dev do Ignition para gravar os dados no banco e gerar os links dos QR Codes.
+          </p>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('estoqueForm');
+    const prefillBanner = document.getElementById('prefillBanner');
+    const statusBox = document.getElementById('statusBox');
+
+    const localField = document.getElementById('local');
+    const itemField = document.getElementById('item');
+    const modeloField = document.getElementById('modelo');
+    const quantidadeField = document.getElementById('quantidade');
+    const observacaoField = document.getElementById('observacao');
+
+    const decreaseQty = document.getElementById('decreaseQty');
+    const increaseQty = document.getElementById('increaseQty');
+    const clearBtn = document.getElementById('clearBtn');
+
+    function getParams() {
+      return new URLSearchParams(window.location.search);
+    }
+
+    function applyPrefill() {
+      const params = getParams();
+      let hasPrefill = false;
+
+      const map = {
+        local: localField,
+        item: itemField,
+        modelo: modeloField,
+        quantidade: quantidadeField,
+        observacao: observacaoField
+      };
+
+      Object.keys(map).forEach((key) => {
+        const value = params.get(key);
+        if (value !== null && value !== '') {
+          map[key].value = value;
+          hasPrefill = true;
+        }
+      });
+
+      if (hasPrefill) {
+        prefillBanner.classList.add('show');
+      }
+    }
+
+    function adjustQty(delta) {
+      let current = parseInt(quantidadeField.value || '1', 10);
+      if (isNaN(current) || current < 1) current = 1;
+      current += delta;
+      if (current < 1) current = 1;
+      quantidadeField.value = current;
+    }
+
+    decreaseQty.addEventListener('click', () => adjustQty(-1));
+    increaseQty.addEventListener('click', () => adjustQty(1));
+
+    document.querySelectorAll('[data-fill-item]').forEach((button) => {
+      button.addEventListener('click', () => {
+        itemField.value = button.dataset.fillItem;
+        document.querySelectorAll('.chip').forEach(chip => chip.classList.remove('active'));
+        button.classList.add('active');
+      });
+    });
+
+    clearBtn.addEventListener('click', () => {
+      form.reset();
+      quantidadeField.value = 1;
+      statusBox.classList.remove('show');
+      prefillBanner.classList.remove('show');
+      document.querySelectorAll('.chip').forEach(chip => chip.classList.remove('active'));
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+
+      statusBox.textContent = 'Registro pronto para envio.';
+      statusBox.classList.add('show');
+
+      const payload = {
+        local: localField.value,
+        item: itemField.value,
+        modelo: modeloField.value,
+        quantidade: quantidadeField.value,
+        observacao: observacaoField.value
+      };
+
+      console.log('Dados do formulário:', payload);
+
+      // Próximo passo:
+      // aqui vamos enviar para um endpoint do Ignition Web Dev
+      // usando fetch('/system/webdev/...', { method: 'POST', ... })
+    });
+
+    applyPrefill();
+  </script>
+</body>
+</html>
