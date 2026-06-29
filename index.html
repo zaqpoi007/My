@@ -1,524 +1,1133 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-theme="light">
+<html lang="pt-BR" data-theme="dark">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Controle de Estoque Kanban</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Registrar Transação</title>
 
-  <link rel="preconnect" href="https://api.fontshare.com">
-  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+  <!-- Fonts -->
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs, doc, serverTimestamp }
+      from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    // ─── CONFIGURE AQUI ───────────────────────────────────────────────────────
+    const firebaseConfig = {
+      apiKey: "SUA_API_KEY",
+      authDomain: "SEU_PROJETO.firebaseapp.com",
+      projectId: "SEU_PROJETO_ID",
+      storageBucket: "SEU_PROJETO.appspot.com",
+      messagingSenderId: "SEU_SENDER_ID",
+      appId: "SEU_APP_ID"
+    };
+    // ──────────────────────────────────────────────────────────────────────────
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getFirestore(app);
+
+    // ── Estrutura das coleções no Firestore ───────────────────────────────────
+    // transacoes/  → cada doc = 1 transação
+    // categorias/  → cada doc = { nome, tipo: 'origem'|'gasto' }
+    // carteiras/   → cada doc = { nome } (ex: Nubank, Reserva, CDB, FII…)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    window.__db = db;
+    window.__firebase = { collection, addDoc, getDocs, doc, serverTimestamp };
+
+    // Defaults para categorias de origem
+    const defaultOrigens = [
+      "Salário","Dividendo","Aposta","Investimento","Cartão de Crédito",
+      "Ticket Alimentação","Caixinha","Renda Extra"
+    ];
+    // Defaults para categorias de gasto
+    const defaultGastos = [
+      "Mercado","Farmácia","Pet Shop","Restaurante","Transporte","Lazer",
+      "Saúde","Educação","Moradia","Vestuário","Assinaturas","Outros"
+    ];
+    // Defaults para carteiras
+    const defaultCarteiras = [
+      "Nubank","Alelo","Conta Corrente","Reserva de Emergência",
+      "CDB","FII","Dinheiro Físico"
+    ];
+
+    async function seedIfEmpty(colName, defaults, field = 'nome') {
+      const snap = await getDocs(collection(db, colName));
+      if (snap.empty) {
+        for (const nome of defaults) {
+          await addDoc(collection(db, colName), { [field]: nome });
+        }
+      }
+    }
+
+    async function loadCollection(colName) {
+      const snap = await getDocs(collection(db, colName));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+
+    async function init() {
+      await Promise.all([
+        seedIfEmpty('categorias_origem', defaultOrigens),
+        seedIfEmpty('categorias_gasto',  defaultGastos),
+        seedIfEmpty('carteiras',          defaultCarteiras),
+      ]);
+
+      const [origens, gastos, carteiras] = await Promise.all([
+        loadCollection('categorias_origem'),
+        loadCollection('categorias_gasto'),
+        loadCollection('carteiras'),
+      ]);
+
+      window.__origens   = origens;
+      window.__gastos    = gastos;
+      window.__carteiras = carteiras;
+
+      window.dispatchEvent(new Event('app-ready'));
+    }
+
+    init().catch(err => {
+      console.error('Firebase init error:', err);
+      window.dispatchEvent(new CustomEvent('app-error', { detail: err.message }));
+    });
+
+    // Expõe funções globais usadas pelo JS inline
+    window.saveTransacao = async function(data) {
+      return addDoc(collection(db, 'transacoes'), {
+        ...data,
+        criadoEm: serverTimestamp()
+      });
+    };
+
+    window.addCategoria = async function(colName, nome) {
+      const ref = await addDoc(collection(db, colName), { nome });
+      return { id: ref.id, nome };
+    };
+
+    window.addCarteira = async function(nome) {
+      const ref = await addDoc(collection(db, 'carteiras'), { nome });
+      return { id: ref.id, nome };
+    };
+  </script>
 
   <style>
-    :root {
-      --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
-      --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
-      --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
-      --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
-      --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
-
-      --space-1: 0.25rem;
-      --space-2: 0.5rem;
-      --space-3: 0.75rem;
-      --space-4: 1rem;
-      --space-5: 1.25rem;
-      --space-6: 1.5rem;
-      --space-8: 2rem;
-      --space-10: 2.5rem;
-      --space-12: 3rem;
-
-      --color-bg: #f7f6f2;
-      --color-surface: #ffffff;
-      --color-surface-2: #f3f0ec;
-      --color-border: #d4d1ca;
-      --color-text: #28251d;
-      --color-text-muted: #6f6b63;
-      --color-primary: #01696f;
-      --color-primary-hover: #0c4e54;
-      --color-success: #437a22;
-      --color-warning: #964219;
-      --color-error: #a13544;
-      --color-focus: rgba(1, 105, 111, 0.18);
-
-      --radius-sm: 0.5rem;
-      --radius-md: 0.75rem;
-      --radius-lg: 1rem;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-      --shadow-md: 0 10px 30px rgba(0,0,0,0.08);
-
-      --font-body: 'Satoshi', Arial, sans-serif;
+    /* ── Tokens ─────────────────────────────────────────── */
+    :root, [data-theme="light"] {
+      --bg:          #f7f6f2;
+      --surface:     #ffffff;
+      --surface-2:   #f3f0ec;
+      --border:      rgba(0,0,0,0.1);
+      --text:        #1a1916;
+      --text-muted:  #6b6a67;
+      --text-faint:  #aaa9a4;
+      --primary:     #01696f;
+      --primary-h:   #0c4e54;
+      --primary-hl:  #cedcd8;
+      --success:     #437a22;
+      --success-hl:  #d4dfcc;
+      --error:       #a12c3a;
+      --error-hl:    #f0d4d7;
+      --warning:     #964219;
+      --warning-hl:  #ddcfc6;
+      --shadow-sm:   0 1px 3px rgba(0,0,0,0.08);
+      --shadow-md:   0 4px 16px rgba(0,0,0,0.10);
+      --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-full: 9999px;
+      --font: 'Satoshi', 'Inter', system-ui, sans-serif;
+      --nav-h: 64px;
+    }
+    [data-theme="dark"] {
+      --bg:          #111110;
+      --surface:     #1c1b19;
+      --surface-2:   #252422;
+      --border:      rgba(255,255,255,0.08);
+      --text:        #e8e7e4;
+      --text-muted:  #8a8986;
+      --text-faint:  #57564f;
+      --primary:     #4f98a3;
+      --primary-h:   #3a8290;
+      --primary-hl:  #1e3738;
+      --success:     #6daa45;
+      --success-hl:  #213518;
+      --error:       #e06070;
+      --error-hl:    #3a1a1e;
+      --warning:     #e89060;
+      --warning-hl:  #3a2010;
+      --shadow-sm:   0 1px 3px rgba(0,0,0,0.3);
+      --shadow-md:   0 4px 16px rgba(0,0,0,0.4);
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    html, body {
-      min-height: 100%;
-    }
-
+    /* ── Reset & Base ───────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: none; height: 100%; }
     body {
-      font-family: var(--font-body);
-      font-size: var(--text-base);
-      line-height: 1.5;
-      background:
-        linear-gradient(180deg, #f7f6f2 0%, #efebe5 100%);
-      color: var(--color-text);
-      padding: var(--space-4);
+      font-family: var(--font);
+      font-size: 15px;
+      color: var(--text);
+      background: var(--bg);
+      min-height: 100dvh;
+      padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+      -webkit-font-smoothing: antialiased;
     }
+    input, select, textarea, button { font: inherit; color: inherit; }
+    button { cursor: pointer; background: none; border: none; }
+    :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--r-sm); }
 
-    .page {
-      max-width: 760px;
-      margin: 0 auto;
-      padding: var(--space-8) 0;
-    }
-
-    .card {
-      background: var(--color-surface);
-      border: 1px solid rgba(40, 37, 29, 0.12);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-md);
-      overflow: hidden;
-    }
-
-    .card-header {
-      padding: var(--space-8);
-      background: linear-gradient(135deg, #01696f 0%, #0f3638 100%);
-      color: #fff;
-    }
-
-    .eyebrow {
-      font-size: var(--text-xs);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      opacity: 0.85;
-      margin-bottom: var(--space-2);
-    }
-
-    h1 {
-      font-size: var(--text-xl);
-      line-height: 1.1;
-      margin-bottom: var(--space-2);
-    }
-
-    .subtitle {
-      color: rgba(255,255,255,0.88);
-      max-width: 48ch;
-    }
-
-    .card-body {
-      padding: var(--space-8);
-      display: grid;
-      gap: var(--space-6);
-    }
-
-    .prefill-banner {
-      display: none;
-      background: #e7f4f4;
-      border: 1px solid rgba(1, 105, 111, 0.16);
-      color: var(--color-primary);
-      padding: var(--space-4);
-      border-radius: var(--radius-md);
-      font-size: var(--text-sm);
-    }
-
-    .prefill-banner.show {
-      display: block;
-    }
-
-    .grid {
-      display: grid;
-      gap: var(--space-5);
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .field {
-      display: grid;
-      gap: var(--space-2);
-    }
-
-    .field.full {
-      grid-column: 1 / -1;
-    }
-
-    label {
-      font-size: var(--text-sm);
-      font-weight: 700;
-      color: var(--color-text);
-    }
-
-    .hint {
-      font-size: var(--text-xs);
-      color: var(--color-text-muted);
-      margin-top: -2px;
-    }
-
-    input,
-    select,
-    textarea {
-      width: 100%;
-      min-height: 48px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius-md);
-      background: #fff;
-      padding: 0 var(--space-4);
-      font: inherit;
-      color: var(--color-text);
-      transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
-    }
-
-    textarea {
-      min-height: 110px;
-      padding: var(--space-4);
-      resize: vertical;
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-      outline: none;
-      border-color: var(--color-primary);
-      box-shadow: 0 0 0 4px var(--color-focus);
-    }
-
-    .qty-wrap {
-      display: grid;
-      grid-template-columns: 1fr auto auto;
-      gap: var(--space-3);
-      align-items: end;
-    }
-
-    .qty-btn {
-      min-width: 48px;
-      height: 48px;
-      border-radius: var(--radius-md);
-      border: 1px solid var(--color-border);
-      background: var(--color-surface-2);
-      font-size: 1.25rem;
-      cursor: pointer;
-      transition: 180ms ease;
-    }
-
-    .qty-btn:hover {
-      background: #e7e2dc;
-    }
-
-    .section-title {
-      font-size: var(--text-sm);
-      font-weight: 700;
-      color: var(--color-text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: calc(var(--space-2) * -1);
-    }
-
-    .quick-list {
+    /* ── Bottom Nav ─────────────────────────────────────── */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+      background: var(--surface);
+      border-top: 1px solid var(--border);
       display: flex;
-      flex-wrap: wrap;
-      gap: var(--space-3);
+      align-items: flex-start;
+      padding-top: 8px;
+      padding-bottom: env(safe-area-inset-bottom);
+      z-index: 100;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.12);
     }
-
-    .chip {
-      border: 1px solid rgba(40, 37, 29, 0.12);
-      background: #fff;
-      color: var(--color-text);
-      border-radius: 999px;
-      padding: 0.7rem 1rem;
-      font-size: var(--text-sm);
-      cursor: pointer;
-      transition: 180ms ease;
-    }
-
-    .chip:hover,
-    .chip.active {
-      background: var(--color-primary);
-      color: #fff;
-      border-color: var(--color-primary);
-    }
-
-    .actions {
+    .nav-item {
+      flex: 1;
       display: flex;
-      gap: var(--space-3);
-      flex-wrap: wrap;
-    }
-
-    .btn {
-      min-height: 50px;
-      border: none;
-      border-radius: var(--radius-md);
-      padding: 0 var(--space-5);
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-      transition: 180ms ease;
-    }
-
-    .btn-primary {
-      background: var(--color-primary);
-      color: #fff;
-    }
-
-    .btn-primary:hover {
-      background: var(--color-primary-hover);
-    }
-
-    .btn-secondary {
-      background: var(--color-surface-2);
-      color: var(--color-text);
-      border: 1px solid rgba(40, 37, 29, 0.12);
-    }
-
-    .footer-note {
-      font-size: var(--text-xs);
-      color: var(--color-text-muted);
-    }
-
-    .status-box {
-      display: none;
-      padding: var(--space-4);
-      border-radius: var(--radius-md);
-      font-size: var(--text-sm);
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 4px;
+      color: var(--text-faint);
+      border-radius: var(--r-sm);
+      transition: color 160ms ease;
+      font-size: 10px;
       font-weight: 500;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .nav-item.active { color: var(--primary); }
+    .nav-item svg { width: 22px; height: 22px; }
+    .nav-item .badge {
+      position: absolute;
+      top: 4px; right: calc(50% - 18px);
+      background: var(--error);
+      color: white;
+      font-size: 9px;
+      font-weight: 700;
+      min-width: 16px;
+      height: 16px;
+      border-radius: var(--r-full);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0 4px;
+    }
+    .nav-item-wrap { position: relative; flex: 1; display: flex; justify-content: center; }
+    .nav-pill {
+      width: 52px; height: 52px;
+      background: var(--primary);
+      border-radius: var(--r-full);
+      display: flex; align-items: center; justify-content: center;
+      color: white;
+      margin-top: -12px;
+      box-shadow: 0 4px 16px rgba(1,105,111,0.45);
+    }
+    .nav-pill svg { width: 24px; height: 24px; }
+
+    /* ── Page ───────────────────────────────────────────── */
+    .page {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 16px 16px 8px;
     }
 
-    .status-box.show {
-      display: block;
+    /* ── Type Selector ──────────────────────────────────── */
+    .type-selector {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .type-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 14px 8px;
+      border-radius: var(--r-md);
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      transition: all 160ms ease;
+    }
+    .type-btn svg { width: 22px; height: 22px; }
+    .type-btn.active-entrada {
+      background: var(--success-hl);
+      border-color: var(--success);
+      color: var(--success);
+    }
+    .type-btn.active-troca {
+      background: var(--primary-hl);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .type-btn.active-saida {
+      background: var(--error-hl);
+      border-color: var(--error);
+      color: var(--error);
+    }
+    .type-btn:active { transform: scale(0.97); }
+
+    /* ── Form ───────────────────────────────────────────── */
+    .form-section {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    /* ── Inputs ─────────────────────────────────────────── */
+    .input, .select, .textarea {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-md);
+      font-size: 15px;
+      color: var(--text);
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+    .input:focus, .select:focus, .textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(1,105,111,0.15);
+      outline: none;
+    }
+    .input::placeholder, .textarea::placeholder { color: var(--text-faint); }
+
+    /* select arrow */
+    .select-wrap { position: relative; }
+    .select-wrap::after {
+      content: '';
+      position: absolute;
+      right: 14px; top: 50%;
+      transform: translateY(-50%);
+      width: 0; height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 6px solid var(--text-muted);
+      pointer-events: none;
+    }
+    .select { padding-right: 36px; }
+
+    /* input com botão de adicionar */
+    .input-add-wrap { display: flex; gap: 8px; }
+    .input-add-wrap .input { flex: 1; }
+    .btn-add {
+      width: 44px; height: 44px;
+      background: var(--surface-2);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-md);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      transition: all 160ms ease;
+    }
+    .btn-add:active { background: var(--primary-hl); color: var(--primary); border-color: var(--primary); }
+
+    /* ── Toggle Pills ───────────────────────────────────── */
+    .toggle-group {
+      display: flex;
+      background: var(--surface-2);
+      border-radius: var(--r-full);
+      padding: 3px;
+      gap: 2px;
+    }
+    .toggle-btn {
+      flex: 1;
+      padding: 8px 4px;
+      border-radius: var(--r-full);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-align: center;
+      transition: all 160ms ease;
+    }
+    .toggle-btn.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: var(--shadow-sm);
     }
 
-    .status-box.success {
-      background: #ebf5e5;
-      color: var(--color-success);
-      border: 1px solid rgba(67, 122, 34, 0.18);
+    /* ── Value Input ────────────────────────────────────── */
+    .value-input-wrap { position: relative; }
+    .value-prefix {
+      position: absolute;
+      left: 14px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 15px;
+      font-weight: 600;
+      pointer-events: none;
+    }
+    .value-input-wrap .input { padding-left: 38px; font-size: 20px; font-weight: 700; }
+
+    /* ── Parcelado Field ────────────────────────────────── */
+    .parcelas-field {
+      display: none;
+    }
+    .parcelas-field.visible { display: flex; flex-direction: column; gap: 6px; }
+
+    /* ── Divider ────────────────────────────────────────── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
     }
 
-    @media (max-width: 640px) {
-      .card-header,
-      .card-body {
-        padding: var(--space-6);
-      }
-
-      .grid,
-      .qty-wrap {
-        grid-template-columns: 1fr;
-      }
-
-      .actions .btn {
-        width: 100%;
-      }
+    /* ── Submit ─────────────────────────────────────────── */
+    .btn-submit {
+      width: 100%;
+      padding: 15px;
+      background: var(--primary);
+      color: white;
+      border-radius: var(--r-lg);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      transition: background 160ms ease, transform 120ms ease;
+      box-shadow: 0 4px 14px rgba(1,105,111,0.35);
+      margin-top: 4px;
     }
+    .btn-submit:active { background: var(--primary-h); transform: scale(0.99); }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Toast ──────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      top: 20px; left: 50%;
+      transform: translateX(-50%) translateY(-80px);
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: var(--shadow-md);
+      z-index: 999;
+      display: flex; align-items: center; gap: 10px;
+      transition: transform 300ms cubic-bezier(0.16,1,0.3,1);
+      white-space: nowrap;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.success { border-color: var(--success); color: var(--success); }
+    .toast.error   { border-color: var(--error); color: var(--error); }
+
+    /* ── Loading overlay ────────────────────────────────── */
+    .loading-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 500;
+      opacity: 0; pointer-events: none;
+      transition: opacity 200ms;
+    }
+    .loading-overlay.visible { opacity: 1; pointer-events: all; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Modal ──────────────────────────────────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 200;
+      display: flex; align-items: flex-end;
+      opacity: 0; pointer-events: none;
+      transition: opacity 200ms;
+    }
+    .modal-backdrop.visible { opacity: 1; pointer-events: all; }
+    .modal {
+      width: 100%;
+      background: var(--surface);
+      border-radius: var(--r-lg) var(--r-lg) 0 0;
+      padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
+      transform: translateY(100%);
+      transition: transform 280ms cubic-bezier(0.16,1,0.3,1);
+    }
+    .modal-backdrop.visible .modal { transform: translateY(0); }
+    .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+    .modal-input { margin-bottom: 12px; }
+    .modal-actions { display: flex; gap: 10px; }
+    .btn-secondary {
+      flex: 1; padding: 12px;
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-md);
+      font-size: 14px; font-weight: 600;
+      color: var(--text-muted);
+      background: var(--surface-2);
+    }
+    .btn-primary-modal {
+      flex: 1; padding: 12px;
+      background: var(--primary);
+      color: white;
+      border-radius: var(--r-md);
+      font-size: 14px; font-weight: 700;
+    }
+
+    /* ── Section title ──────────────────────────────────── */
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-faint);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      margin-top: 4px;
+    }
+
+    /* ── Chip tags ──────────────────────────────────────── */
+    .chip-group {
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .chip {
+      padding: 6px 12px;
+      border-radius: var(--r-full);
+      background: var(--surface-2);
+      border: 1.5px solid var(--border);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      transition: all 160ms;
+      cursor: pointer;
+    }
+    .chip.active {
+      background: var(--primary-hl);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .chip:active { transform: scale(0.96); }
+
+    /* ── Theme Toggle ───────────────────────────────────── */
+    .theme-toggle {
+      position: fixed;
+      top: 14px; right: 14px;
+      width: 36px; height: 36px;
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-full);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted);
+      z-index: 50;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* ── Page header ────────────────────────────────────── */
+    .page-header {
+      padding: 14px 16px 0;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    .page-header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .page-header p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Connection warning ─────────────────────────────── */
+    .conn-banner {
+      background: var(--warning-hl);
+      border: 1px solid var(--warning);
+      color: var(--warning);
+      padding: 10px 14px;
+      border-radius: var(--r-md);
+      font-size: 13px;
+      font-weight: 500;
+      display: none;
+      margin-bottom: 14px;
+    }
+    .conn-banner.show { display: block; }
   </style>
 </head>
 <body>
-  <main class="page">
-    <section class="card">
-      <header class="card-header">
-        <div class="eyebrow">Kanban · Retirada de estoque</div>
-        <h1>Controle de retirada</h1>
-        <p class="subtitle">
-          Informe o local, item, modelo e quantidade retirada. A página também pode ser aberta por QR Code com os dados já preenchidos.
-        </p>
-      </header>
 
-      <div class="card-body">
-        <div id="prefillBanner" class="prefill-banner">
-          Dados carregados automaticamente a partir do QR Code.
+<!-- Theme toggle -->
+<button class="theme-toggle" data-theme-toggle aria-label="Alternar tema">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+  </svg>
+</button>
+
+<!-- Toast -->
+<div class="toast" id="toast" role="alert" aria-live="polite"></div>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loading"><div class="spinner"></div></div>
+
+<!-- Modal: nova categoria origem -->
+<div class="modal-backdrop" id="modal-origem">
+  <div class="modal">
+    <h3>Nova Categoria de Origem</h3>
+    <input class="input modal-input" id="nova-origem-input" placeholder="Ex: Freelance, Aluguel…" maxlength="40">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-origem')">Cancelar</button>
+      <button class="btn-primary-modal" onclick="saveNovaOrigem()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: nova categoria gasto -->
+<div class="modal-backdrop" id="modal-gasto-cat">
+  <div class="modal">
+    <h3>Nova Categoria de Gasto</h3>
+    <input class="input modal-input" id="nova-gasto-input" placeholder="Ex: Academia, Streaming…" maxlength="40">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-gasto-cat')">Cancelar</button>
+      <button class="btn-primary-modal" onclick="saveNovaGasto()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: nova carteira -->
+<div class="modal-backdrop" id="modal-carteira">
+  <div class="modal">
+    <h3>Nova Carteira / Conta</h3>
+    <input class="input modal-input" id="nova-carteira-input" placeholder="Ex: Tesouro Direto, Poupança…" maxlength="40">
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-carteira')">Cancelar</button>
+      <button class="btn-primary-modal" onclick="saveNovaCarteira()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Page header -->
+<div class="page-header">
+  <h1>Registrar</h1>
+  <p id="subtitle">O que vai registrar hoje?</p>
+</div>
+
+<main class="page">
+
+  <!-- Aviso Firebase -->
+  <div class="conn-banner" id="conn-banner">
+    ⚠️ Firebase não configurado. Configure o firebaseConfig no topo do arquivo.
+  </div>
+
+  <!-- Tipo de transação -->
+  <div class="type-selector">
+    <button class="type-btn active-entrada" id="btn-entrada" onclick="setTipo('entrada')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M12 19V5M5 12l7-7 7 7"/>
+      </svg>
+      Recebimento
+    </button>
+    <button class="type-btn" id="btn-troca" onclick="setTipo('troca')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+      </svg>
+      Troca
+    </button>
+    <button class="type-btn" id="btn-saida" onclick="setTipo('saida')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+        <path d="M12 5v14M5 12l7 7 7-7"/>
+      </svg>
+      Gasto
+    </button>
+  </div>
+
+  <form id="form-transacao" onsubmit="submitForm(event)" novalidate>
+    <div class="form-section">
+
+      <!-- ── SEÇÃO: RECEBIMENTO ───────────────────────── -->
+      <div id="sec-entrada">
+        <p class="section-title">Origem do Recebimento</p>
+        <div class="field">
+          <label>Categoria</label>
+          <div class="input-add-wrap">
+            <div class="select-wrap" style="flex:1">
+              <select class="select" id="sel-origem"></select>
+            </div>
+            <button type="button" class="btn-add" onclick="openModal('modal-origem')" aria-label="Adicionar categoria">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
         </div>
 
-        <div class="section-title">Dados da retirada</div>
-
-        <form id="estoqueForm">
-          <div class="grid">
-            <div class="field full">
-              <label for="local">Local</label>
-              <select id="local" name="local" required>
-                <option value="">Selecione o local</option>
-                <option value="Usinas 1 a 4">Usinas 1 a 4</option>
-                <option value="Usinas 5 a 7">Usinas 5 a 7</option>
-                <option value="Usina 8">Usina 8</option>
-              </select>
+        <div class="field" style="margin-top:14px">
+          <label>Destino (Carteira)</label>
+          <div class="input-add-wrap">
+            <div class="select-wrap" style="flex:1">
+              <select class="select" id="sel-destino-entrada"></select>
             </div>
-
-            <div class="field">
-              <label for="item">Item</label>
-              <select id="item" name="item" required>
-                <option value="">Selecione o item</option>
-                <option value="Cartão digital">Cartão digital</option>
-                <option value="Cartão analógico">Cartão analógico</option>
-                <option value="Fonte de alimentação">Fonte de alimentação</option>
-                <option value="Rádio">Rádio</option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label for="modelo">Modelo</label>
-              <select id="modelo" name="modelo" required>
-                <option value="">Selecione o modelo</option>
-                <option value="AI830">AI830</option>
-                <option value="DI845">DI845</option>
-                <option value="IE-2000">IE-2000</option>
-              </select>
-            </div>
-
-            <div class="field full">
-              <label for="quantidade">Quantidade</label>
-              <div class="qty-wrap">
-                <input
-                  id="quantidade"
-                  name="quantidade"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value="1"
-                  required
-                />
-                <button class="qty-btn" type="button" id="decreaseQty" aria-label="Diminuir quantidade">-</button>
-                <button class="qty-btn" type="button" id="increaseQty" aria-label="Aumentar quantidade">+</button>
-              </div>
-              <div class="hint">Exemplo: 1, 2, 10 itens.</div>
-            </div>
-
-            <div class="field full">
-              <label for="observacao">Observação</label>
-              <textarea
-                id="observacao"
-                name="observacao"
-                placeholder="Campo opcional para observações da retirada"
-              ></textarea>
-            </div>
+            <button type="button" class="btn-add" onclick="openModal('modal-carteira')" aria-label="Adicionar carteira">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
           </div>
-
-          <div style="height: 24px;"></div>
-
-          <div class="section-title">Atalhos rápidos</div>
-          <div style="height: 12px;"></div>
-
-          <div class="quick-list">
-            <button type="button" class="chip" data-fill-item="Cartão digital">Cartão digital</button>
-            <button type="button" class="chip" data-fill-item="Cartão analógico">Cartão analógico</button>
-            <button type="button" class="chip" data-fill-item="Fonte de alimentação">Fonte de alimentação</button>
-            <button type="button" class="chip" data-fill-item="Rádio">Rádio</button>
-          </div>
-
-          <div style="height: 24px;"></div>
-
-          <div id="statusBox" class="status-box success">
-            Registro pronto para envio.
-          </div>
-
-          <div class="actions">
-            <button type="submit" class="btn btn-primary">Registrar retirada</button>
-            <button type="button" id="clearBtn" class="btn btn-secondary">Limpar campos</button>
-          </div>
-
-          <div style="height: 16px;"></div>
-
-          <p class="footer-note">
-            Depois vamos conectar este formulário ao Web Dev do Ignition para gravar os dados no banco e gerar os links dos QR Codes.
-          </p>
-        </form>
+        </div>
       </div>
-    </section>
-  </main>
 
-  <script>
-    const form = document.getElementById('estoqueForm');
-    const prefillBanner = document.getElementById('prefillBanner');
-    const statusBox = document.getElementById('statusBox');
+      <!-- ── SEÇÃO: TROCA ─────────────────────────────── -->
+      <div id="sec-troca" style="display:none">
+        <p class="section-title">Movimentação entre Carteiras</p>
+        <div class="field">
+          <label>Origem</label>
+          <div class="input-add-wrap">
+            <div class="select-wrap" style="flex:1">
+              <select class="select" id="sel-troca-origem"></select>
+            </div>
+            <button type="button" class="btn-add" onclick="openModal('modal-carteira')" aria-label="Adicionar carteira">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="field" style="margin-top:14px">
+          <label>Destino</label>
+          <div class="input-add-wrap">
+            <div class="select-wrap" style="flex:1">
+              <select class="select" id="sel-troca-destino"></select>
+            </div>
+            <button type="button" class="btn-add" onclick="openModal('modal-carteira')" aria-label="Adicionar carteira">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
 
-    const localField = document.getElementById('local');
-    const itemField = document.getElementById('item');
-    const modeloField = document.getElementById('modelo');
-    const quantidadeField = document.getElementById('quantidade');
-    const observacaoField = document.getElementById('observacao');
+      <!-- ── SEÇÃO: GASTO ─────────────────────────────── -->
+      <div id="sec-saida" style="display:none">
 
-    const decreaseQty = document.getElementById('decreaseQty');
-    const increaseQty = document.getElementById('increaseQty');
-    const clearBtn = document.getElementById('clearBtn');
+        <!-- Categoria do gasto em chips -->
+        <div class="field">
+          <label>Categoria</label>
+          <div id="chips-gasto" class="chip-group"></div>
+          <button type="button" class="chip" style="margin-top:4px; border-style:dashed" onclick="openModal('modal-gasto-cat')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline;margin-right:4px"><path d="M12 5v14M5 12h14"/></svg>
+            Nova
+          </button>
+        </div>
 
-    function getParams() {
-      return new URLSearchParams(window.location.search);
+        <div class="divider"></div>
+
+        <!-- Cartão ou dinheiro -->
+        <div class="field">
+          <label>Forma de Pagamento</label>
+          <div class="toggle-group" id="toggle-pagamento">
+            <button type="button" class="toggle-btn active" data-val="cartao" onclick="setToggle('toggle-pagamento',this)">Cartão</button>
+            <button type="button" class="toggle-btn" data-val="dinheiro" onclick="setToggle('toggle-pagamento',this)">Dinheiro</button>
+            <button type="button" class="toggle-btn" data-val="pix" onclick="setToggle('toggle-pagamento',this)">Pix</button>
+          </div>
+        </div>
+
+        <!-- Carteira -->
+        <div class="field">
+          <label>Carteira / Conta</label>
+          <div class="input-add-wrap">
+            <div class="select-wrap" style="flex:1">
+              <select class="select" id="sel-carteira-saida"></select>
+            </div>
+            <button type="button" class="btn-add" onclick="openModal('modal-carteira')" aria-label="Adicionar carteira">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- À vista ou parcelado -->
+        <div class="field">
+          <label>Modalidade</label>
+          <div class="toggle-group" id="toggle-modalidade">
+            <button type="button" class="toggle-btn active" data-val="avista" onclick="setToggle('toggle-modalidade',this); toggleParcelas(false)">À vista</button>
+            <button type="button" class="toggle-btn" data-val="parcelado" onclick="setToggle('toggle-modalidade',this); toggleParcelas(true)">Parcelado</button>
+          </div>
+        </div>
+
+        <!-- Parcelas (condicional) -->
+        <div class="parcelas-field" id="parcelas-field">
+          <label>Número de Parcelas</label>
+          <div class="field-row">
+            <input class="input" type="number" id="num-parcelas" placeholder="Ex: 12" min="2" max="72">
+            <div style="display:flex;align-items:center;color:var(--text-muted);font-size:13px;font-weight:500">
+              parcelas iguais
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── CAMPOS COMUNS ─────────────────────────────── -->
+      <div class="divider"></div>
+
+      <div class="field">
+        <label>Descrição <span style="color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0">(opcional)</span></label>
+        <input class="input" type="text" id="descricao" placeholder="Ex: Supermercado BH, salário junho…" maxlength="120">
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Data</label>
+          <input class="input" type="date" id="data" required>
+        </div>
+        <div class="field">
+          <label>Valor</label>
+          <div class="value-input-wrap">
+            <span class="value-prefix">R$</span>
+            <input class="input" type="number" id="valor" placeholder="0,00" step="0.01" min="0.01" required inputmode="decimal">
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit" id="btn-submit">
+        Registrar Transação
+      </button>
+
+    </div>
+  </form>
+</main>
+
+<!-- Bottom Nav -->
+<nav class="bottom-nav" aria-label="Navegação principal">
+  <div class="nav-item-wrap">
+    <button class="nav-item" aria-label="Início">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12L12 3l9 9M5 10v9h5v-5h4v5h5v-9"/>
+      </svg>
+      Home
+    </button>
+  </div>
+  <div class="nav-item-wrap">
+    <button class="nav-item active" aria-label="Registrar" aria-current="page">
+      <div class="nav-pill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      </div>
+    </button>
+  </div>
+  <div class="nav-item-wrap">
+    <button class="nav-item" aria-label="Histórico">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>
+      </svg>
+      Histórico
+    </button>
+  </div>
+  <div class="nav-item-wrap">
+    <button class="nav-item" aria-label="Previstos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+      </svg>
+      Previstos
+    </button>
+  </div>
+  <div class="nav-item-wrap">
+    <button class="nav-item" aria-label="Carro">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M5 17H3v-5l2-5h14l2 5v5h-2M5 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0zm10 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0z"/>
+      </svg>
+      Carro
+    </button>
+  </div>
+  <div class="nav-item-wrap">
+    <button class="nav-item" aria-label="Viagens">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.6 19a19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 3.1 4.18 2 2 0 0 1 5.09 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L9.09 9.91A16 16 0 0 0 15 15.91l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+      </svg>
+      Viagens
+    </button>
+  </div>
+</nav>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let tipoAtual = 'entrada';
+let catGastoSelecionada = null;
+
+// ── Theme toggle ───────────────────────────────────────────────────────────
+(function() {
+  const btn = document.querySelector('[data-theme-toggle]');
+  const html = document.documentElement;
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  let theme = isDark ? 'dark' : 'light';
+  html.setAttribute('data-theme', theme);
+  function updateIcon() {
+    btn.innerHTML = theme === 'dark'
+      ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+      : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  }
+  updateIcon();
+  btn.addEventListener('click', () => {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', theme);
+    updateIcon();
+  });
+})();
+
+// ── Data today ─────────────────────────────────────────────────────────────
+document.getElementById('data').value = new Date().toISOString().split('T')[0];
+
+// ── Firebase ready ─────────────────────────────────────────────────────────
+window.addEventListener('app-ready', () => {
+  populateSelects();
+  populateChips();
+});
+window.addEventListener('app-error', (e) => {
+  document.getElementById('conn-banner').classList.add('show');
+});
+
+function populateSelects() {
+  const carteiras = window.__carteiras || [];
+  const origens   = window.__origens  || [];
+
+  fillSelect('sel-origem', origens);
+  fillSelect('sel-destino-entrada', carteiras);
+  fillSelect('sel-troca-origem', carteiras);
+  fillSelect('sel-troca-destino', carteiras);
+  fillSelect('sel-carteira-saida', carteiras);
+}
+
+function fillSelect(id, items) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  items.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.id;
+    opt.textContent = item.nome;
+    el.appendChild(opt);
+  });
+}
+
+function populateChips() {
+  const gastos = window.__gastos || [];
+  const container = document.getElementById('chips-gasto');
+  container.innerHTML = '';
+  gastos.forEach(g => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = g.nome;
+    chip.dataset.id = g.id;
+    if (!catGastoSelecionada && gastos.length) {
+      catGastoSelecionada = g.id;
+      chip.classList.add('active');
+    }
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('#chips-gasto .chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      catGastoSelecionada = g.id;
+    });
+    container.appendChild(chip);
+  });
+}
+
+// ── Tipo de transação ──────────────────────────────────────────────────────
+function setTipo(tipo) {
+  tipoAtual = tipo;
+
+  ['entrada','troca','saida'].forEach(t => {
+    const btn = document.getElementById('btn-' + t);
+    btn.className = 'type-btn';
+    if (t === tipo) btn.classList.add('active-' + tipo);
+  });
+
+  document.getElementById('sec-entrada').style.display = tipo === 'entrada' ? '' : 'none';
+  document.getElementById('sec-troca').style.display   = tipo === 'troca'   ? '' : 'none';
+  document.getElementById('sec-saida').style.display   = tipo === 'saida'   ? '' : 'none';
+
+  const subtitles = {
+    entrada: 'Registrar um recebimento',
+    troca:   'Movimentar entre carteiras',
+    saida:   'Registrar um gasto'
+  };
+  document.getElementById('subtitle').textContent = subtitles[tipo];
+
+  const btn = document.getElementById('btn-submit');
+  const colors = { entrada: '#437a22', troca: 'var(--primary)', saida: '#a12c3a' };
+  btn.style.background = colors[tipo];
+  btn.textContent = tipo === 'entrada' ? 'Registrar Recebimento'
+                  : tipo === 'troca'   ? 'Registrar Troca'
+                  : 'Registrar Gasto';
+}
+
+// ── Toggle pills ───────────────────────────────────────────────────────────
+function setToggle(groupId, clickedBtn) {
+  document.querySelectorAll('#' + groupId + ' .toggle-btn')
+    .forEach(b => b.classList.remove('active'));
+  clickedBtn.classList.add('active');
+}
+
+function toggleParcelas(show) {
+  document.getElementById('parcelas-field').classList.toggle('visible', show);
+}
+
+// ── Modais ─────────────────────────────────────────────────────────────────
+function openModal(id) {
+  document.getElementById(id).classList.add('visible');
+  const input = document.querySelector('#' + id + ' input');
+  if (input) { input.value = ''; setTimeout(() => input.focus(), 100); }
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('visible');
+}
+document.querySelectorAll('.modal-backdrop').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) closeModal(m.id); });
+});
+
+async function saveNovaOrigem() {
+  const input = document.getElementById('nova-origem-input');
+  const nome = input.value.trim();
+  if (!nome) return;
+  showLoading(true);
+  try {
+    const item = await window.addCategoria('categorias_origem', nome);
+    window.__origens.push(item);
+    fillSelect('sel-origem', window.__origens);
+    document.getElementById('sel-origem').value = item.id;
+    closeModal('modal-origem');
+    showToast('Categoria adicionada!', 'success');
+  } catch(e) { showToast('Erro ao salvar', 'error'); }
+  showLoading(false);
+}
+
+async function saveNovaGasto() {
+  const input = document.getElementById('nova-gasto-input');
+  const nome = input.value.trim();
+  if (!nome) return;
+  showLoading(true);
+  try {
+    const item = await window.addCategoria('categorias_gasto', nome);
+    window.__gastos.push(item);
+    populateChips();
+    closeModal('modal-gasto-cat');
+    showToast('Categoria adicionada!', 'success');
+  } catch(e) { showToast('Erro ao salvar', 'error'); }
+  showLoading(false);
+}
+
+async function saveNovaCarteira() {
+  const input = document.getElementById('nova-carteira-input');
+  const nome = input.value.trim();
+  if (!nome) return;
+  showLoading(true);
+  try {
+    const item = await window.addCarteira(nome);
+    window.__carteiras.push(item);
+    ['sel-destino-entrada','sel-troca-origem','sel-troca-destino','sel-carteira-saida'].forEach(id => {
+      fillSelect(id, window.__carteiras);
+    });
+    closeModal('modal-carteira');
+    showToast('Carteira adicionada!', 'success');
+  } catch(e) { showToast('Erro ao salvar', 'error'); }
+  showLoading(false);
+}
+
+// ── Submit ─────────────────────────────────────────────────────────────────
+async function submitForm(e) {
+  e.preventDefault();
+  const valor = parseFloat(document.getElementById('valor').value);
+  const data  = document.getElementById('data').value;
+  const desc  = document.getElementById('descricao').value.trim();
+
+  if (!valor || valor <= 0) { showToast('Informe um valor válido', 'error'); return; }
+  if (!data)                { showToast('Informe a data', 'error'); return; }
+
+  let payload = { tipo: tipoAtual, valor, data, descricao: desc };
+
+  if (tipoAtual === 'entrada') {
+    payload.categoriaOrigemId  = document.getElementById('sel-origem').value;
+    payload.categoriaOrigemNome = document.getElementById('sel-origem').selectedOptions[0]?.text;
+    payload.carteiraDestinoId  = document.getElementById('sel-destino-entrada').value;
+    payload.carteiraDestinoNome = document.getElementById('sel-destino-entrada').selectedOptions[0]?.text;
+  }
+  else if (tipoAtual === 'troca') {
+    payload.carteiraOrigemId   = document.getElementById('sel-troca-origem').value;
+    payload.carteiraOrigemNome = document.getElementById('sel-troca-origem').selectedOptions[0]?.text;
+    payload.carteiraDestinoId  = document.getElementById('sel-troca-destino').value;
+    payload.carteiraDestinoNome = document.getElementById('sel-troca-destino').selectedOptions[0]?.text;
+    if (payload.carteiraOrigemId === payload.carteiraDestinoId) {
+      showToast('Origem e destino não podem ser iguais', 'error'); return;
+    }
+  }
+  else if (tipoAtual === 'saida') {
+    const catId = catGastoSelecionada;
+    const catNome = document.querySelector('#chips-gasto .chip.active')?.textContent || '';
+    const pagamento = document.querySelector('#toggle-pagamento .toggle-btn.active')?.dataset.val;
+    const modalidade = document.querySelector('#toggle-modalidade .toggle-btn.active')?.dataset.val;
+    const parcelas = modalidade === 'parcelado'
+      ? parseInt(document.getElementById('num-parcelas').value) || null : null;
+
+    if (!catId) { showToast('Selecione uma categoria', 'error'); return; }
+    if (modalidade === 'parcelado' && (!parcelas || parcelas < 2)) {
+      showToast('Informe o número de parcelas (mín. 2)', 'error'); return;
     }
 
-    function applyPrefill() {
-      const params = getParams();
-      let hasPrefill = false;
+    payload.categoriaGastoId   = catId;
+    payload.categoriaGastoNome = catNome;
+    payload.formaPagamento     = pagamento;
+    payload.modalidade         = modalidade;
+    payload.parcelas           = parcelas;
+    payload.carteiraId         = document.getElementById('sel-carteira-saida').value;
+    payload.carteiraNome       = document.getElementById('sel-carteira-saida').selectedOptions[0]?.text;
 
-      const map = {
-        local: localField,
-        item: itemField,
-        modelo: modeloField,
-        quantidade: quantidadeField,
-        observacao: observacaoField
-      };
+    // Tags especiais para filtros das abas Carro e Viagens
+    payload.tagCarro   = catNome?.toLowerCase().includes('carro') || catNome?.toLowerCase().includes('combustível') || false;
+    payload.tagViagem  = catNome?.toLowerCase().includes('viagem') || catNome?.toLowerCase().includes('hotel') || catNome?.toLowerCase().includes('voo') || false;
+  }
 
-      Object.keys(map).forEach((key) => {
-        const value = params.get(key);
-        if (value !== null && value !== '') {
-          map[key].value = value;
-          hasPrefill = true;
-        }
-      });
+  showLoading(true);
+  try {
+    await window.saveTransacao(payload);
+    showToast('Transação registrada! ✓', 'success');
+    resetForm();
+  } catch(err) {
+    console.error(err);
+    showToast('Erro ao salvar. Tente novamente.', 'error');
+  }
+  showLoading(false);
+}
 
-      if (hasPrefill) {
-        prefillBanner.classList.add('show');
-      }
-    }
+function resetForm() {
+  document.getElementById('descricao').value = '';
+  document.getElementById('valor').value = '';
+  document.getElementById('data').value = new Date().toISOString().split('T')[0];
+  setTipo(tipoAtual);
+  // reset modalidade
+  const modBtns = document.querySelectorAll('#toggle-modalidade .toggle-btn');
+  modBtns.forEach((b,i) => b.classList.toggle('active', i === 0));
+  toggleParcelas(false);
+}
 
-    function adjustQty(delta) {
-      let current = parseInt(quantidadeField.value || '1', 10);
-      if (isNaN(current) || current < 1) current = 1;
-      current += delta;
-      if (current < 1) current = 1;
-      quantidadeField.value = current;
-    }
+// ── Utils ──────────────────────────────────────────────────────────────────
+function showLoading(show) {
+  document.getElementById('loading').classList.toggle('visible', show);
+  document.getElementById('btn-submit').disabled = show;
+}
 
-    decreaseQty.addEventListener('click', () => adjustQty(-1));
-    increaseQty.addEventListener('click', () => adjustQty(1));
-
-    document.querySelectorAll('[data-fill-item]').forEach((button) => {
-      button.addEventListener('click', () => {
-        itemField.value = button.dataset.fillItem;
-        document.querySelectorAll('.chip').forEach(chip => chip.classList.remove('active'));
-        button.classList.add('active');
-      });
-    });
-
-    clearBtn.addEventListener('click', () => {
-      form.reset();
-      quantidadeField.value = 1;
-      statusBox.classList.remove('show');
-      prefillBanner.classList.remove('show');
-      document.querySelectorAll('.chip').forEach(chip => chip.classList.remove('active'));
-    });
-
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-
-      if (!form.checkValidity()) {
-        form.reportValidity();
-        return;
-      }
-
-      statusBox.textContent = 'Registro pronto para envio.';
-      statusBox.classList.add('show');
-
-      const payload = {
-        local: localField.value,
-        item: itemField.value,
-        modelo: modeloField.value,
-        quantidade: quantidadeField.value,
-        observacao: observacaoField.value
-      };
-
-      console.log('Dados do formulário:', payload);
-
-      // Próximo passo:
-      // aqui vamos enviar para um endpoint do Ignition Web Dev
-      // usando fetch('/system/webdev/...', { method: 'POST', ... })
-    });
-
-    applyPrefill();
-  </script>
+let toastTimer;
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  const icons = {
+    success: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>',
+    error:   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>'
+  };
+  t.innerHTML = (icons[type] || '') + msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
 </body>
 </html>
