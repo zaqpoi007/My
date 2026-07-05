@@ -739,8 +739,16 @@
     </div>
 
     <script>
-        const API_CONFIG = 'https://sheetdb.io/api/v1/674odxycj332e'; 
-        const API_LOGS = 'https://sheetdb.io/api/v1/ygjm5xqv86hb5';   
+        // === NOVA CONFIGURAÇÃO DA API UNIFICADA ===
+        const BASE_API = 'https://sheetdb.io/api/v1/ygjm5xqv86hb5'; 
+        
+        // Coloque aqui o nome exato das abas na sua planilha do Google Sheets
+        const ABA_CONFIG = 'itens_sequencia'; 
+        const ABA_LOGS = 'sequencia'; 
+        
+        // URLs base já com o parâmetro das abas para os requests GET
+        const API_CONFIG = `${BASE_API}?sheet=${ABA_CONFIG}`;
+        const API_LOGS = `${BASE_API}?sheet=${ABA_LOGS}`;   
         
         let isProcessing = false; 
         let resolveModal = null; 
@@ -760,7 +768,7 @@
 
         // Constantes do Carrossel de Histórico
         const PERIODOS_HISTORICO = ['Semanal', 'Mensal', 'Anual'];
-        let indicePeriodoAtual = 1; // Começa na aba Mensal
+        let indicePeriodoAtual = 1; 
 
         document.querySelectorAll('.form-day').forEach(chip => {
             chip.addEventListener('click', function() {
@@ -786,9 +794,8 @@
                 document.getElementById('nav-history').classList.add('active');
                 document.getElementById('history-view').style.display = 'block';
                 document.getElementById('header-title').innerText = 'Histórico';
-                renderizarHistoricoDetalhado(); // Desenha a lista de histórico na hora H
+                renderizarHistoricoDetalhado(); 
             } else {
-                // Aba de Ajustes
                 document.getElementById('settings-view').style.display = 'block';
                 document.getElementById('header-title').innerText = 'Ajustes';
             }
@@ -801,14 +808,12 @@
 
             document.getElementById('history-period-label').innerText = PERIODOS_HISTORICO[indicePeriodoAtual];
 
-            // Atualizar opacidade dos botões de seta para indicar limites
             document.getElementById('btn-prev-period').style.opacity = indicePeriodoAtual === 0 ? '0.3' : '1';
             document.getElementById('btn-next-period').style.opacity = indicePeriodoAtual === 2 ? '0.3' : '1';
 
             renderizarHistoricoDetalhado();
         }
 
-        // Helper para lidar com as Datas no formato brasileiro
         function parseDateBR(str) {
             if(!str) return new Date(0);
             const parts = str.split(' ')[0].split('/');
@@ -816,7 +821,6 @@
             return new Date(parts[2], parts[1] - 1, parts[0]);
         }
 
-        // Descobre o primeiro e último dia da semana atual (Dom a Sáb)
         function getWeekRange(date) {
             const d = new Date(date);
             const day = d.getDay();
@@ -839,11 +843,11 @@
                 const diasSemana = ['status_dom', 'status_seg', 'status_ter', 'status_qua', 'status_qui', 'status_sex', 'status_sab'];
                 colunaDiaHojeStr = diasSemana[hoje.getDay()];
 
-                // Definindo períodos da Semana e Mês
                 const { start: startOfWeek, end: endOfWeek } = getWeekRange(hoje);
                 const currentMonth = hoje.getMonth();
                 const currentYear = hoje.getFullYear();
 
+                // Usa as novas constantes para fazer os GETs nas abas separadas
                 const [configsRes, logsRes] = await Promise.all([
                     fetch(API_CONFIG),
                     fetch(API_LOGS)
@@ -855,16 +859,13 @@
                 configs.sort((a, b) => (parseFloat(a.indice) || 0) - (parseFloat(b.indice) || 0));
                 todasTarefasGlobais = configs;
 
-                // Transforma as strings de data dos logs em objetos Date para não fazer parse várias vezes
                 const logsParsed = logs.filter(l => l.status === "1").map(l => ({
                     ...l,
                     parsedDate: parseDateBR(l.data)
                 }));
 
-                // 1. Logs de Hoje
                 logsDeHojeGlobais = logsParsed.filter(log => log.data.startsWith(hojeStr));
                 
-                // 2. Logs e Totais da Semana
                 logsSemanaGlobais = logsParsed.filter(log => log.parsedDate >= startOfWeek && log.parsedDate <= endOfWeek);
                 
                 totalSemanaGlobal = 0;
@@ -872,7 +873,6 @@
                     totalSemanaGlobal += configs.filter(t => t[dia] === "TRUE").length;
                 });
 
-                // 3. Logs e Totais do Mês
                 logsMesGlobais = logsParsed.filter(log => log.parsedDate.getMonth() === currentMonth && log.parsedDate.getFullYear() === currentYear);
 
                 totalMesGlobal = 0;
@@ -883,14 +883,11 @@
                     totalMesGlobal += configs.filter(t => t[col] === "TRUE").length;
                 }
 
-                // 4. Logs do Ano Inteiro
                 logsAnoGlobais = logsParsed.filter(log => log.parsedDate.getFullYear() === currentYear);
                 
-                // Atualizações de UI
                 renderizarHome();
                 renderizarAjustes();
                 
-                // Força a renderização inicial do carrossel caso a pessoa atualize a página na aba Histórico
                 mudarPeriodoHistorico(0); 
                 mudarAba(abaAtual); 
 
@@ -902,7 +899,6 @@
             }
         }
 
-        // Função que calcula exatamente quantos dias de um determinado período a tarefa deveria ter sido feita
         function calcularEstatisticasIndividuais(tarefa, periodType) {
             let logsTarget = [];
             let startDate, endDate;
@@ -934,7 +930,6 @@
             ];
 
             let expected = 0;
-            // Configurar no meio do dia para evitar problemas com horário de verão
             let d = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 12, 0, 0);
             let end = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 12, 0, 0);
 
@@ -951,7 +946,6 @@
             return { expected, completed, percent };
         }
 
-        // Renderiza a Nova Aba de Histórico com cálculos em tempo real
         function renderizarHistoricoDetalhado() {
             const ul = document.getElementById('lista-historico');
             ul.innerHTML = '';
@@ -966,7 +960,6 @@
             todasTarefasGlobais.forEach(tarefa => {
                 const stats = calcularEstatisticasIndividuais(tarefa, periodoAtual);
 
-                // Se a tarefa não devia ser feita em nenhum dia desse período (ex: dias desmarcados), pulamos ela.
                 if (stats.expected === 0) return;
 
                 ul.innerHTML += `
@@ -990,29 +983,24 @@
         }
 
         function renderizarHome() {
-            // --- CÁLCULOS PARA HOJE ---
             const tarefasDeHoje = todasTarefasGlobais.filter(tarefa => tarefa[colunaDiaHojeStr] === "TRUE");
             const totalHoje = tarefasDeHoje.length;
             const concluidasHoje = logsDeHojeGlobais.length;
             const percentualHoje = totalHoje === 0 ? 0 : Math.round((concluidasHoje / totalHoje) * 100);
 
-            // Atualiza os textos do Gauge de hoje
             document.getElementById('gauge-subtitle').innerText = `A fazer: ${Math.max(0, totalHoje - concluidasHoje)}/${totalHoje}`;
             animarGauge(percentualHoje);
 
-            // --- CÁLCULOS PARA A SEMANA ---
             const percentualSemana = totalSemanaGlobal === 0 ? 0 : Math.round((logsSemanaGlobais.length / totalSemanaGlobal) * 100);
             document.getElementById('week-percent').innerText = `${percentualSemana}%`;
             document.getElementById('week-text').innerText = `${logsSemanaGlobais.length}/${totalSemanaGlobal} concluídas`;
             setTimeout(() => { document.getElementById('week-bar').style.width = `${percentualSemana}%`; }, 100);
 
-            // --- CÁLCULOS PARA O MÊS ---
             const percentualMes = totalMesGlobal === 0 ? 0 : Math.round((logsMesGlobais.length / totalMesGlobal) * 100);
             document.getElementById('month-percent').innerText = `${percentualMes}%`;
             document.getElementById('month-text').innerText = `${logsMesGlobais.length}/${totalMesGlobal} concluídas`;
             setTimeout(() => { document.getElementById('month-bar').style.width = `${percentualMes}%`; }, 100);
 
-            // --- LISTA DE TAREFAS DE HOJE ---
             const ul = document.getElementById('lista-tarefas-hoje');
             ul.innerHTML = '';
 
@@ -1056,7 +1044,6 @@
             });
         }
 
-        /* --- Lógica de Visualização de Detalhes na Home --- */
         function abrirInfo(event, tarefa) {
             event.stopPropagation(); 
             
@@ -1073,7 +1060,6 @@
             document.getElementById('info-modal').classList.add('active');
         }
 
-        /* --- Lógica de Criação de Tarefa --- */
         function abrirModalNovaTarefa() {
             document.getElementById('add-tag').value = '';
             document.getElementById('add-desc').value = '';
@@ -1156,7 +1142,6 @@
             }
         }
 
-        /* --- Lógica de Edição de Tarefa (Ajustes) --- */
         function abrirDetalhes(tarefa) {
             document.getElementById('det-tag').value = tarefa.item;
             document.getElementById('det-desc').value = tarefa.descricao;
@@ -1219,7 +1204,8 @@
                     }
                 };
 
-                await fetch(`${API_CONFIG}/item/${encodeURIComponent(itemOriginal)}`, {
+                // Patch agora recebe sheet=ABA_CONFIG na query url
+                await fetch(`${BASE_API}/item/${encodeURIComponent(itemOriginal)}?sheet=${ABA_CONFIG}`, {
                     method: 'PATCH',
                     headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -1235,7 +1221,6 @@
             }
         }
 
-        /* --- Lógica de Toggle (Check/Uncheck na Home) --- */
         function abrirModalConfirmacao() {
             document.getElementById('confirm-modal').classList.add('active');
             return new Promise((resolve) => { resolveModal = resolve; });
@@ -1266,7 +1251,8 @@
 
             try {
                 if (isRealizada) {
-                    await fetch(`${API_LOGS}/item/${encodeURIComponent(item)}?data=${encodeURIComponent(exactData)}`, {
+                    // Delete agora recebe o sheet=ABA_LOGS também
+                    await fetch(`${BASE_API}/item/${encodeURIComponent(item)}?data=${encodeURIComponent(exactData)}&sheet=${ABA_LOGS}`, {
                         method: 'DELETE',
                         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }
                     });
@@ -1293,7 +1279,6 @@
             }
         }
 
-        /* --- Utilidades Visuais --- */
         function mostrarLoading(texto) {
             const views = document.querySelectorAll('.view-content');
             views.forEach(v => v.style.opacity = '0.3');
