@@ -739,14 +739,13 @@
     </div>
 
     <script>
-        // === NOVA CONFIGURAÇÃO DA API UNIFICADA ===
-        const BASE_API = 'https://sheetdb.io/api/v1/ygjm5xqv86hb5'; 
+        // === SUA NOVA API DO GOOGLE APPS SCRIPT ===
+        const BASE_API = 'https://script.google.com/macros/s/AKfycbzGT5lLljtjwCy4SZEDbdNxVb-wgPU0X673pZBrLGfPuLGJ997E_YXOLq6ypK-3P0isvg/exec'; 
         
-        // Coloque aqui o nome exato das abas na sua planilha do Google Sheets
         const ABA_CONFIG = 'itens_sequencia'; 
         const ABA_LOGS = 'sequencia'; 
         
-        // URLs base já com o parâmetro das abas para os requests GET
+        // URLs preparadas para o método GET
         const API_CONFIG = `${BASE_API}?sheet=${ABA_CONFIG}`;
         const API_LOGS = `${BASE_API}?sheet=${ABA_LOGS}`;   
         
@@ -754,8 +753,6 @@
         let resolveModal = null; 
         
         let abaAtual = 'home';
-        
-        // Dados Globais
         let todasTarefasGlobais = [];
         let logsDeHojeGlobais = [];
         let logsSemanaGlobais = [];
@@ -766,7 +763,6 @@
         let totalMesGlobal = 0;
         let colunaDiaHojeStr = '';
 
-        // Constantes do Carrossel de Histórico
         const PERIODOS_HISTORICO = ['Semanal', 'Mensal', 'Anual'];
         let indicePeriodoAtual = 1; 
 
@@ -847,7 +843,7 @@
                 const currentMonth = hoje.getMonth();
                 const currentYear = hoje.getFullYear();
 
-                // Usa as novas constantes para fazer os GETs nas abas separadas
+                // Busca dados usando GET formatado para o Google Apps Script
                 const [configsRes, logsRes] = await Promise.all([
                     fetch(API_CONFIG),
                     fetch(API_LOGS)
@@ -1046,7 +1042,6 @@
 
         function abrirInfo(event, tarefa) {
             event.stopPropagation(); 
-            
             document.getElementById('info-titulo').innerText = tarefa.item;
             document.getElementById('info-desc').innerText = tarefa.descricao;
             
@@ -1056,7 +1051,6 @@
             } else {
                 divDetalhes.innerHTML = "<span style='color: var(--text-muted); font-style: italic;'>Nenhum detalhe adicional cadastrado para esta tarefa.</span>";
             }
-            
             document.getElementById('info-modal').classList.add('active');
         }
 
@@ -1117,20 +1111,20 @@
                     diasMap[chip.dataset.day] = chip.classList.contains('active') ? "TRUE" : "FALSE";
                 });
 
-                const payload = {
-                    data: [{
-                        indice: novoIndice,
-                        item: tag,
-                        descricao: desc,
-                        detalhes: detalhes,
-                        ...diasMap
-                    }]
-                };
-
-                await fetch(API_CONFIG, {
+                // ENVIANDO COMO POST PARA O GOOGLE APPS SCRIPT
+                await fetch(BASE_API, {
                     method: 'POST',
-                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({
+                        action: 'POST_CONFIG',
+                        sheet: ABA_CONFIG,
+                        data: [{
+                            indice: novoIndice,
+                            item: tag,
+                            descricao: desc,
+                            detalhes: detalhes,
+                            ...diasMap
+                        }]
+                    })
                 });
 
                 await initApp(); 
@@ -1196,19 +1190,19 @@
                     diasMap[chip.dataset.day] = chip.classList.contains('active') ? "TRUE" : "FALSE";
                 });
 
-                const payload = {
-                    data: {
-                        descricao: desc,
-                        detalhes: detalhes,
-                        ...diasMap
-                    }
-                };
-
-                // Patch agora recebe sheet=ABA_CONFIG na query url
-                await fetch(`${BASE_API}/item/${encodeURIComponent(itemOriginal)}?sheet=${ABA_CONFIG}`, {
-                    method: 'PATCH',
-                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                // ATUALIZANDO COMO POST_PATCH PARA O GOOGLE APPS SCRIPT
+                await fetch(BASE_API, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        action: 'PATCH_CONFIG',
+                        sheet: ABA_CONFIG,
+                        item: itemOriginal,
+                        data: {
+                            descricao: desc,
+                            detalhes: detalhes,
+                            ...diasMap
+                        }
+                    })
                 });
 
                 await initApp();
@@ -1251,10 +1245,15 @@
 
             try {
                 if (isRealizada) {
-                    // Delete agora recebe o sheet=ABA_LOGS também
-                    await fetch(`${BASE_API}/item/${encodeURIComponent(item)}?data=${encodeURIComponent(exactData)}&sheet=${ABA_LOGS}`, {
-                        method: 'DELETE',
-                        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }
+                    // DELETANDO COMO POST PARA O GOOGLE APPS SCRIPT
+                    await fetch(BASE_API, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            action: 'DELETE_LOG',
+                            sheet: ABA_LOGS,
+                            item: item,
+                            data: exactData
+                        })
                     });
                 } else {
                     const agora = new Date();
@@ -1263,10 +1262,14 @@
                                     agora.getMinutes().toString().padStart(2, '0') + ':' +
                                     agora.getSeconds().toString().padStart(2, '0');
                     
-                    await fetch(API_LOGS, {
+                    // MARCANDO FEITO COMO POST PARA O GOOGLE APPS SCRIPT
+                    await fetch(BASE_API, {
                         method: 'POST',
-                        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ data: [{ "data": dataStr, "item": item, "status": "1" }] })
+                        body: JSON.stringify({
+                            action: 'POST_LOG',
+                            sheet: ABA_LOGS,
+                            data: [{ "data": dataStr, "item": item, "status": "1" }]
+                        })
                     });
                 }
                 
