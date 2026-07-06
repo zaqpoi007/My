@@ -558,7 +558,7 @@
         <div class="header-icon" onclick="mudarAba('settings')">⚙</div>
     </header>
 
-    <div id="loading">
+    <div id="loading" style="display: none;">
         <div class="spinner"></div>
         <span id="loading-text">Sincronizando rotina...</span>
     </div>
@@ -745,7 +745,6 @@
         const ABA_CONFIG = 'itens_sequencia'; 
         const ABA_LOGS = 'sequencia'; 
         
-        // URLs preparadas para o método GET
         const API_CONFIG = `${BASE_API}?sheet=${ABA_CONFIG}`;
         const API_LOGS = `${BASE_API}?sheet=${ABA_LOGS}`;   
         
@@ -753,6 +752,12 @@
         let resolveModal = null; 
         
         let abaAtual = 'home';
+        
+        // Dados Brutos Salvos no Cache
+        let rawConfigs = [];
+        let rawLogs = [];
+
+        // Dados Processados Globais
         let todasTarefasGlobais = [];
         let logsDeHojeGlobais = [];
         let logsSemanaGlobais = [];
@@ -830,70 +835,100 @@
             return { start, end };
         }
 
-        async function initApp() {
-            mostrarLoading("Sincronizando banco de dados...");
+        // --- NOVA LÓGICA DE PROCESSAMENTO E CACHE ---
+        function processarDados() {
+            const hoje = new Date();
+            const hojeStr = hoje.toLocaleDateString('pt-BR'); 
+            
+            const diasSemana = ['status_dom', 'status_seg', 'status_ter', 'status_qua', 'status_qui', 'status_sex', 'status_sab'];
+            colunaDiaHojeStr = diasSemana[hoje.getDay()];
+
+            const { start: startOfWeek, end: endOfWeek } = getWeekRange(hoje);
+            const currentMonth = hoje.getMonth();
+            const currentYear = hoje.getFullYear();
+
+            // Configurações
+            rawConfigs.sort((a, b) => (parseFloat(a.indice) || 0) - (parseFloat(b.indice) || 0));
+            todasTarefasGlobais = rawConfigs;
+
+            // Logs
+            const logsParsed = rawLogs.filter(l => l.status === "1").map(l => ({
+                ...l,
+                parsedDate: parseDateBR(l.data)
+            }));
+
+            logsDeHojeGlobais = logsParsed.filter(log => log.data.startsWith(hojeStr));
+            logsSemanaGlobais = logsParsed.filter(log => log.parsedDate >= startOfWeek && log.parsedDate <= endOfWeek);
+            
+            totalSemanaGlobal = 0;
+            diasSemana.forEach(dia => {
+                totalSemanaGlobal += todasTarefasGlobais.filter(t => t[dia] === "TRUE").length;
+            });
+
+            logsMesGlobais = logsParsed.filter(log => log.parsedDate.getMonth() === currentMonth && log.parsedDate.getFullYear() === currentYear);
+
+            totalMesGlobal = 0;
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+            for (let i = 1; i <= daysInMonth; i++) {
+                const d = new Date(currentYear, currentMonth, i);
+                const col = diasSemana[d.getDay()];
+                totalMesGlobal += todasTarefasGlobais.filter(t => t[col] === "TRUE").length;
+            }
+
+            logsAnoGlobais = logsParsed.filter(log => log.parsedDate.getFullYear() === currentYear);
+            
+            renderizarHome();
+            renderizarAjustes();
+            renderizarHistoricoDetalhado();
+        }
+
+        async function sincronizarBackground() {
             try {
-                const hoje = new Date();
-                const hojeStr = hoje.toLocaleDateString('pt-BR'); 
-                
-                const diasSemana = ['status_dom', 'status_seg', 'status_ter', 'status_qua', 'status_qui', 'status_sex', 'status_sab'];
-                colunaDiaHojeStr = diasSemana[hoje.getDay()];
-
-                const { start: startOfWeek, end: endOfWeek } = getWeekRange(hoje);
-                const currentMonth = hoje.getMonth();
-                const currentYear = hoje.getFullYear();
-
-                // Busca dados usando GET formatado para o Google Apps Script
                 const [configsRes, logsRes] = await Promise.all([
                     fetch(API_CONFIG),
                     fetch(API_LOGS)
                 ]);
 
-                let configs = await configsRes.json();
-                const logs = await logsRes.json();
+                rawConfigs = await configsRes.json();
+                rawLogs = await logsRes.json();
 
-                configs.sort((a, b) => (parseFloat(a.indice) || 0) - (parseFloat(b.indice) || 0));
-                todasTarefasGlobais = configs;
+                // Atualiza o LocalStorage
+                localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
+                localStorage.setItem('rotina_logs', JSON.stringify(rawLogs));
 
-                const logsParsed = logs.filter(l => l.status === "1").map(l => ({
-                    ...l,
-                    parsedDate: parseDateBR(l.data)
-                }));
-
-                logsDeHojeGlobais = logsParsed.filter(log => log.data.startsWith(hojeStr));
-                
-                logsSemanaGlobais = logsParsed.filter(log => log.parsedDate >= startOfWeek && log.parsedDate <= endOfWeek);
-                
-                totalSemanaGlobal = 0;
-                diasSemana.forEach(dia => {
-                    totalSemanaGlobal += configs.filter(t => t[dia] === "TRUE").length;
-                });
-
-                logsMesGlobais = logsParsed.filter(log => log.parsedDate.getMonth() === currentMonth && log.parsedDate.getFullYear() === currentYear);
-
-                totalMesGlobal = 0;
-                const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-                for (let i = 1; i <= daysInMonth; i++) {
-                    const d = new Date(currentYear, currentMonth, i);
-                    const col = diasSemana[d.getDay()];
-                    totalMesGlobal += configs.filter(t => t[col] === "TRUE").length;
+                // Processa a tela de novo apenas se o app não estiver no meio de um clique rápido
+                if (!isProcessing) {
+                    processarDados();
                 }
+            } catch (error) {
+                console.error("Falha ao sincronizar dados em background:", error);
+            }
+        }
 
-                logsAnoGlobais = logsParsed.filter(log => log.parsedDate.getFullYear() === currentYear);
-                
-                renderizarHome();
-                renderizarAjustes();
-                
+        async function initApp() {
+            const cacheConfigs = localStorage.getItem('rotina_configs');
+            const cacheLogs = localStorage.getItem('rotina_logs');
+
+            if (cacheConfigs && cacheLogs) {
+                // Tem Cache: Carrega Instantaneamente
+                rawConfigs = JSON.parse(cacheConfigs);
+                rawLogs = JSON.parse(cacheLogs);
+                processarDados();
                 mudarPeriodoHistorico(0); 
                 mudarAba(abaAtual); 
 
+                // Roda rotina pra atualizar cache invisivelmente
+                sincronizarBackground(); 
+            } else {
+                // Primeira Vez: Espera a planilha carregar
+                mostrarLoading("Sincronizando banco de dados...");
+                await sincronizarBackground();
+                mudarPeriodoHistorico(0); 
+                mudarAba(abaAtual); 
                 esconderLoading();
-
-            } catch (error) {
-                console.error("Erro ao carregar:", error);
-                document.getElementById('loading-text').innerText = "Falha de conexão.";
             }
         }
+        // --------------------------------------------
 
         function calcularEstatisticasIndividuais(tarefa, periodType) {
             let logsTarget = [];
@@ -1083,54 +1118,56 @@
 
             isProcessing = true;
             fecharModal('add-modal');
-            mostrarLoading("Salvando nova tarefa...");
+            
+            const pos = document.getElementById('add-position').value;
+            let novoIndice = 1;
 
-            try {
-                const pos = document.getElementById('add-position').value;
-                let novoIndice = 1;
-
-                if (todasTarefasGlobais.length > 0) {
-                    if (pos === 'inicio') {
-                        novoIndice = parseFloat(todasTarefasGlobais[0].indice) - 1;
-                    } else if (pos === 'fim') {
-                        novoIndice = parseFloat(todasTarefasGlobais[todasTarefasGlobais.length - 1].indice) + 1;
+            if (todasTarefasGlobais.length > 0) {
+                if (pos === 'inicio') {
+                    novoIndice = parseFloat(todasTarefasGlobais[0].indice) - 1;
+                } else if (pos === 'fim') {
+                    novoIndice = parseFloat(todasTarefasGlobais[todasTarefasGlobais.length - 1].indice) + 1;
+                } else {
+                    const indexPos = todasTarefasGlobais.findIndex(t => t.item === pos);
+                    const currentIndice = parseFloat(todasTarefasGlobais[indexPos].indice);
+                    if (indexPos + 1 < todasTarefasGlobais.length) {
+                        const nextIndice = parseFloat(todasTarefasGlobais[indexPos + 1].indice);
+                        novoIndice = (currentIndice + nextIndice) / 2;
                     } else {
-                        const indexPos = todasTarefasGlobais.findIndex(t => t.item === pos);
-                        const currentIndice = parseFloat(todasTarefasGlobais[indexPos].indice);
-                        if (indexPos + 1 < todasTarefasGlobais.length) {
-                            const nextIndice = parseFloat(todasTarefasGlobais[indexPos + 1].indice);
-                            novoIndice = (currentIndice + nextIndice) / 2;
-                        } else {
-                            novoIndice = currentIndice + 1;
-                        }
+                        novoIndice = currentIndice + 1;
                     }
                 }
+            }
 
-                const diasMap = {};
-                document.querySelectorAll('.form-day').forEach(chip => {
-                    diasMap[chip.dataset.day] = chip.classList.contains('active') ? "TRUE" : "FALSE";
-                });
+            const diasMap = {};
+            document.querySelectorAll('.form-day').forEach(chip => {
+                diasMap[chip.dataset.day] = chip.classList.contains('active') ? "TRUE" : "FALSE";
+            });
 
-                // ENVIANDO COMO POST PARA O GOOGLE APPS SCRIPT
+            // ATUALIZA O CACHE OTIMISTAMENTE
+            const novaTarefa = {
+                indice: novoIndice,
+                item: tag,
+                descricao: desc,
+                detalhes: detalhes,
+                ...diasMap
+            };
+            rawConfigs.push(novaTarefa);
+            localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
+            processarDados(); // Atualiza a tela
+
+            try {
+                // CHAMA A API NO FUNDO
                 await fetch(BASE_API, {
                     method: 'POST',
                     body: JSON.stringify({
                         action: 'POST_CONFIG',
                         sheet: ABA_CONFIG,
-                        data: [{
-                            indice: novoIndice,
-                            item: tag,
-                            descricao: desc,
-                            detalhes: detalhes,
-                            ...diasMap
-                        }]
+                        data: [novaTarefa]
                     })
                 });
-
-                await initApp(); 
             } catch (error) {
-                alert("Erro ao salvar tarefa.");
-                esconderLoading();
+                console.error("Erro ao salvar tarefa.", error);
             } finally {
                 isProcessing = false;
             }
@@ -1182,15 +1219,24 @@
 
             isProcessing = true;
             fecharModal('details-modal');
-            mostrarLoading("Atualizando tarefa...");
+            
+            const diasMap = {};
+            document.querySelectorAll('#det-dias .form-day-edit').forEach(chip => {
+                diasMap[chip.dataset.day] = chip.classList.contains('active') ? "TRUE" : "FALSE";
+            });
+
+            // ATUALIZA CACHE OTIMISTAMENTE
+            const index = rawConfigs.findIndex(c => c.item === itemOriginal);
+            if(index !== -1) {
+                rawConfigs[index].descricao = desc;
+                rawConfigs[index].detalhes = detalhes;
+                Object.assign(rawConfigs[index], diasMap);
+                localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
+                processarDados(); // Atualiza a tela
+            }
 
             try {
-                const diasMap = {};
-                document.querySelectorAll('#det-dias .form-day-edit').forEach(chip => {
-                    diasMap[chip.dataset.day] = chip.classList.contains('active') ? "TRUE" : "FALSE";
-                });
-
-                // ATUALIZANDO COMO POST_PATCH PARA O GOOGLE APPS SCRIPT
+                // CHAMA A API NO FUNDO
                 await fetch(BASE_API, {
                     method: 'POST',
                     body: JSON.stringify({
@@ -1204,12 +1250,8 @@
                         }
                     })
                 });
-
-                await initApp();
             } catch (error) {
-                console.error("Erro:", error);
-                alert("Erro ao editar a tarefa.");
-                esconderLoading();
+                console.error("Erro ao editar a tarefa.", error);
             } finally {
                 isProcessing = false;
             }
@@ -1241,11 +1283,26 @@
             }
 
             isProcessing = true;
-            mostrarLoading(isRealizada ? 'Removendo...' : 'Marcando como feito...');
+
+            // ATUALIZA CACHE OTIMISTAMENTE
+            if (isRealizada) {
+                rawLogs = rawLogs.filter(l => !(l.item === item && l.data === exactData));
+            } else {
+                const agora = new Date();
+                const dataStr = agora.toLocaleDateString('pt-BR') + ' ' + 
+                                agora.getHours().toString().padStart(2, '0') + ':' + 
+                                agora.getMinutes().toString().padStart(2, '0') + ':' +
+                                agora.getSeconds().toString().padStart(2, '0');
+                exactData = dataStr;
+                rawLogs.push({ "data": exactData, "item": item, "status": "1" });
+            }
+
+            localStorage.setItem('rotina_logs', JSON.stringify(rawLogs));
+            processarDados(); // Atualiza a tela imediatamente
 
             try {
+                // CHAMA A API NO FUNDO
                 if (isRealizada) {
-                    // DELETANDO COMO POST PARA O GOOGLE APPS SCRIPT
                     await fetch(BASE_API, {
                         method: 'POST',
                         body: JSON.stringify({
@@ -1256,27 +1313,17 @@
                         })
                     });
                 } else {
-                    const agora = new Date();
-                    const dataStr = agora.toLocaleDateString('pt-BR') + ' ' + 
-                                    agora.getHours().toString().padStart(2, '0') + ':' + 
-                                    agora.getMinutes().toString().padStart(2, '0') + ':' +
-                                    agora.getSeconds().toString().padStart(2, '0');
-                    
-                    // MARCANDO FEITO COMO POST PARA O GOOGLE APPS SCRIPT
                     await fetch(BASE_API, {
                         method: 'POST',
                         body: JSON.stringify({
                             action: 'POST_LOG',
                             sheet: ABA_LOGS,
-                            data: [{ "data": dataStr, "item": item, "status": "1" }]
+                            data: [{ "data": exactData, "item": item, "status": "1" }]
                         })
                     });
                 }
-                
-                await initApp();
             } catch (error) {
-                alert("Ocorreu um erro. Tente novamente.");
-                esconderLoading();
+                console.error("Ocorreu um erro ao comunicar com a planilha. O local foi atualizado.", error);
             } finally {
                 isProcessing = false;
             }
