@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Minha Rotina</title>
+    
+    <!-- Configurações PWA para iPhone (Abre em tela cheia sem barras do Safari) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Minha Rotina">
+    <meta name="mobile-web-app-capable" content="yes">
+
     <style>
         :root {
             --bg-color: #000000;
@@ -411,36 +418,6 @@
         }
         .fab:active { transform: scale(0.9); }
 
-        /* --- Loading Animado --- */
-        #loading {
-            position: absolute;
-            width: 100%;
-            top: 40%;
-            left: 0;
-            z-index: 10;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
-
-        .spinner {
-            width: 32px;
-            height: 32px;
-            border: 3px solid var(--surface-color);
-            border-top: 3px solid var(--accent-color);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-bottom: 12px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
         .view-content {
             transition: opacity 0.3s;
         }
@@ -557,11 +534,6 @@
         <h1 id="header-title">Minha Rotina</h1>
         <div class="header-icon" onclick="mudarAba('settings')">⚙</div>
     </header>
-
-    <div id="loading" style="display: none;">
-        <div class="spinner"></div>
-        <span id="loading-text">Sincronizando rotina...</span>
-    </div>
 
     <main id="home-view" class="view-content" style="display: none;">
         
@@ -739,21 +711,12 @@
     </div>
 
     <script>
-        // === SUA NOVA API DO GOOGLE APPS SCRIPT ===
-        const BASE_API = 'https://script.google.com/macros/s/AKfycbzGT5lLljtjwCy4SZEDbdNxVb-wgPU0X673pZBrLGfPuLGJ997E_YXOLq6ypK-3P0isvg/exec'; 
+        // === ARMAZENAMENTO 100% LOCAL (LocalStorage) ===
         
-        const ABA_CONFIG = 'itens_sequencia'; 
-        const ABA_LOGS = 'sequencia'; 
-        
-        const API_CONFIG = `${BASE_API}?sheet=${ABA_CONFIG}`;
-        const API_LOGS = `${BASE_API}?sheet=${ABA_LOGS}`;   
-        
-        let isProcessing = false; 
         let resolveModal = null; 
-        
         let abaAtual = 'home';
         
-        // Dados Brutos Salvos no Cache
+        // Dados Brutos Localizados
         let rawConfigs = [];
         let rawLogs = [];
 
@@ -770,6 +733,13 @@
 
         const PERIODOS_HISTORICO = ['Semanal', 'Mensal', 'Anual'];
         let indicePeriodoAtual = 1; 
+
+        // Tarefas iniciais padrão caso o LocalStorage esteja vazio
+        const DEFAULT_CONFIGS = [
+            { indice: 1, item: 'acordar_cedo', descricao: 'Acordar cedo e preparar o dia', detalhes: 'Planejar as prioridades principais', status_dom: 'TRUE', status_seg: 'TRUE', status_ter: 'TRUE', status_qua: 'TRUE', status_qui: 'TRUE', status_sex: 'TRUE', status_sab: 'TRUE' },
+            { indice: 2, item: 'treino', descricao: 'Realizar exercício físico', detalhes: 'Corrida, natação ou ciclismo', status_dom: 'TRUE', status_seg: 'TRUE', status_ter: 'TRUE', status_qua: 'TRUE', status_qui: 'TRUE', status_sex: 'TRUE', status_sab: 'TRUE' },
+            { indice: 3, item: 'leitura', descricao: 'Ler 15 minutos', detalhes: 'Livro técnico ou desenvolvimento', status_dom: 'TRUE', status_seg: 'TRUE', status_ter: 'TRUE', status_qua: 'TRUE', status_qui: 'TRUE', status_sex: 'TRUE', status_sab: 'TRUE' }
+        ];
 
         document.querySelectorAll('.form-day').forEach(chip => {
             chip.addEventListener('click', function() {
@@ -835,7 +805,7 @@
             return { start, end };
         }
 
-        // --- NOVA LÓGICA DE PROCESSAMENTO E CACHE ---
+        // --- LÓGICA DE PROCESSAMENTO LOCAL ---
         function processarDados() {
             const hoje = new Date();
             const hojeStr = hoje.toLocaleDateString('pt-BR'); 
@@ -882,53 +852,28 @@
             renderizarHistoricoDetalhado();
         }
 
-        async function sincronizarBackground() {
-            try {
-                const [configsRes, logsRes] = await Promise.all([
-                    fetch(API_CONFIG),
-                    fetch(API_LOGS)
-                ]);
-
-                rawConfigs = await configsRes.json();
-                rawLogs = await logsRes.json();
-
-                // Atualiza o LocalStorage
-                localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
-                localStorage.setItem('rotina_logs', JSON.stringify(rawLogs));
-
-                // Processa a tela de novo apenas se o app não estiver no meio de um clique rápido
-                if (!isProcessing) {
-                    processarDados();
-                }
-            } catch (error) {
-                console.error("Falha ao sincronizar dados em background:", error);
-            }
-        }
-
-        async function initApp() {
+        function initApp() {
             const cacheConfigs = localStorage.getItem('rotina_configs');
             const cacheLogs = localStorage.getItem('rotina_logs');
 
-            if (cacheConfigs && cacheLogs) {
-                // Tem Cache: Carrega Instantaneamente
+            if (cacheConfigs) {
                 rawConfigs = JSON.parse(cacheConfigs);
-                rawLogs = JSON.parse(cacheLogs);
-                processarDados();
-                mudarPeriodoHistorico(0); 
-                mudarAba(abaAtual); 
-
-                // Roda rotina pra atualizar cache invisivelmente
-                sincronizarBackground(); 
             } else {
-                // Primeira Vez: Espera a planilha carregar
-                mostrarLoading("Sincronizando banco de dados...");
-                await sincronizarBackground();
-                mudarPeriodoHistorico(0); 
-                mudarAba(abaAtual); 
-                esconderLoading();
+                rawConfigs = DEFAULT_CONFIGS;
+                localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
             }
+
+            if (cacheLogs) {
+                rawLogs = JSON.parse(cacheLogs);
+            } else {
+                rawLogs = [];
+                localStorage.setItem('rotina_logs', JSON.stringify(rawLogs));
+            }
+
+            processarDados();
+            mudarPeriodoHistorico(0); 
+            mudarAba(abaAtual); 
         }
-        // --------------------------------------------
 
         function calcularEstatisticasIndividuais(tarefa, periodType) {
             let logsTarget = [];
@@ -1104,9 +1049,7 @@
             document.getElementById('add-modal').classList.add('active');
         }
 
-        async function salvarNovaTarefa() {
-            if (isProcessing) return;
-            
+        function salvarNovaTarefa() {
             const tag = document.getElementById('add-tag').value.trim();
             const desc = document.getElementById('add-desc').value.trim();
             const detalhes = document.getElementById('add-detalhes').value.trim();
@@ -1116,7 +1059,6 @@
                 return;
             }
 
-            isProcessing = true;
             fecharModal('add-modal');
             
             const pos = document.getElementById('add-position').value;
@@ -1144,7 +1086,6 @@
                 diasMap[chip.dataset.day] = chip.classList.contains('active') ? "TRUE" : "FALSE";
             });
 
-            // ATUALIZA O CACHE OTIMISTAMENTE
             const novaTarefa = {
                 indice: novoIndice,
                 item: tag,
@@ -1152,25 +1093,10 @@
                 detalhes: detalhes,
                 ...diasMap
             };
+
             rawConfigs.push(novaTarefa);
             localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
-            processarDados(); // Atualiza a tela
-
-            try {
-                // CHAMA A API NO FUNDO
-                await fetch(BASE_API, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'POST_CONFIG',
-                        sheet: ABA_CONFIG,
-                        data: [novaTarefa]
-                    })
-                });
-            } catch (error) {
-                console.error("Erro ao salvar tarefa.", error);
-            } finally {
-                isProcessing = false;
-            }
+            processarDados();
         }
 
         function abrirDetalhes(tarefa) {
@@ -1206,9 +1132,7 @@
             document.getElementById('details-modal').classList.add('active');
         }
 
-        async function salvarEdicaoTarefa(itemOriginal) {
-            if (isProcessing) return;
-            
+        function salvarEdicaoTarefa(itemOriginal) {
             const desc = document.getElementById('det-desc').value.trim();
             const detalhes = document.getElementById('det-detalhes').value.trim();
             
@@ -1217,7 +1141,6 @@
                 return;
             }
 
-            isProcessing = true;
             fecharModal('details-modal');
             
             const diasMap = {};
@@ -1225,35 +1148,13 @@
                 diasMap[chip.dataset.day] = chip.classList.contains('active') ? "TRUE" : "FALSE";
             });
 
-            // ATUALIZA CACHE OTIMISTAMENTE
             const index = rawConfigs.findIndex(c => c.item === itemOriginal);
             if(index !== -1) {
                 rawConfigs[index].descricao = desc;
                 rawConfigs[index].detalhes = detalhes;
                 Object.assign(rawConfigs[index], diasMap);
                 localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
-                processarDados(); // Atualiza a tela
-            }
-
-            try {
-                // CHAMA A API NO FUNDO
-                await fetch(BASE_API, {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        action: 'PATCH_CONFIG',
-                        sheet: ABA_CONFIG,
-                        item: itemOriginal,
-                        data: {
-                            descricao: desc,
-                            detalhes: detalhes,
-                            ...diasMap
-                        }
-                    })
-                });
-            } catch (error) {
-                console.error("Erro ao editar a tarefa.", error);
-            } finally {
-                isProcessing = false;
+                processarDados();
             }
         }
 
@@ -1275,16 +1176,11 @@
         }
 
         async function toggleTask(item, isRealizada, exactData) {
-            if (isProcessing) return;
-
             if (isRealizada) {
                 const confirmacao = await abrirModalConfirmacao();
                 if (!confirmacao) return; 
             }
 
-            isProcessing = true;
-
-            // ATUALIZA CACHE OTIMISTAMENTE
             if (isRealizada) {
                 rawLogs = rawLogs.filter(l => !(l.item === item && l.data === exactData));
             } else {
@@ -1293,53 +1189,11 @@
                                 agora.getHours().toString().padStart(2, '0') + ':' + 
                                 agora.getMinutes().toString().padStart(2, '0') + ':' +
                                 agora.getSeconds().toString().padStart(2, '0');
-                exactData = dataStr;
-                rawLogs.push({ "data": exactData, "item": item, "status": "1" });
+                rawLogs.push({ "data": dataStr, "item": item, "status": "1" });
             }
 
             localStorage.setItem('rotina_logs', JSON.stringify(rawLogs));
-            processarDados(); // Atualiza a tela imediatamente
-
-            try {
-                // CHAMA A API NO FUNDO
-                if (isRealizada) {
-                    await fetch(BASE_API, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            action: 'DELETE_LOG',
-                            sheet: ABA_LOGS,
-                            item: item,
-                            data: exactData
-                        })
-                    });
-                } else {
-                    await fetch(BASE_API, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            action: 'POST_LOG',
-                            sheet: ABA_LOGS,
-                            data: [{ "data": exactData, "item": item, "status": "1" }]
-                        })
-                    });
-                }
-            } catch (error) {
-                console.error("Ocorreu um erro ao comunicar com a planilha. O local foi atualizado.", error);
-            } finally {
-                isProcessing = false;
-            }
-        }
-
-        function mostrarLoading(texto) {
-            const views = document.querySelectorAll('.view-content');
-            views.forEach(v => v.style.opacity = '0.3');
-            document.getElementById('loading-text').innerText = texto;
-            document.getElementById('loading').style.display = 'flex';
-        }
-
-        function esconderLoading() {
-            const views = document.querySelectorAll('.view-content');
-            views.forEach(v => v.style.opacity = '1');
-            document.getElementById('loading').style.display = 'none';
+            processarDados();
         }
 
         function animarGauge(percentual) {
@@ -1355,7 +1209,7 @@
             }, 100);
         }
 
-        // Inicializa o app
+        // Inicializa o app localmente
         initApp();
     </script>
 </body>
