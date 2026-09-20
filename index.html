@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Minha Rotina</title>
     
-    <!-- Configurações PWA para iPhone (Abre em tela cheia sem barras do Safari) -->
+    <!-- Configurações PWA para iPhone -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Minha Rotina">
@@ -56,9 +56,12 @@
         }
 
         .header-icon {
-            font-size: 1.4rem;
             color: var(--text-muted);
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
             transition: color 0.2s;
         }
         
@@ -466,19 +469,19 @@
         
         .modal-buttons {
             display: flex;
-            gap: 12px;
+            gap: 8px;
             margin-top: 20px;
         }
         .modal-buttons button {
             flex: 1;
-            padding: 12px;
+            padding: 12px 8px;
             border: none;
             border-radius: 8px;
-            font-size: 1rem;
+            font-size: 0.9rem;
             font-weight: 600;
             cursor: pointer;
         }
-        .btn-cancel { background-color: transparent; color: var(--text-main); border: 1px solid var(--text-muted); }
+        .btn-cancel { background-color: var(--surface-hover); color: var(--text-main); border: 1px solid rgba(255,255,255,0.1); }
         .btn-confirm { background-color: var(--danger-color); color: white; }
         .btn-primary { background-color: var(--accent-color); color: black; }
 
@@ -498,11 +501,6 @@
         
         .form-group textarea {
             resize: vertical;
-        }
-
-        .form-group input[readonly] {
-            opacity: 0.6;
-            cursor: not-allowed;
         }
         
         /* Seletores de Dias (Chips) */
@@ -532,7 +530,12 @@
 
     <header>
         <h1 id="header-title">Minha Rotina</h1>
-        <div class="header-icon" onclick="mudarAba('settings')">⚙</div>
+        <div class="header-icon" onclick="mudarAba('settings')" title="Definições">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="nav-icon-svg" style="width: 22px; height: 22px;">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+        </div>
     </header>
 
     <main id="home-view" class="view-content" style="display: none;">
@@ -634,12 +637,13 @@
         </div>
     </div>
 
+    <!-- MODAL DE EDIÇÃO COM ID EDITÁVEL E BOTÃO DE EXCLUIR -->
     <div class="modal-overlay" id="details-modal">
         <div class="modal-box">
             <h2 id="det-titulo">Editar Tarefa</h2>
             <div class="form-group">
-                <label>Tag / ID (Imutável)</label>
-                <input type="text" id="det-tag" readonly>
+                <label>Tag / ID</label>
+                <input type="text" id="det-tag" placeholder="Identificador único">
             </div>
             <div class="form-group">
                 <label>Descrição</label>
@@ -655,6 +659,7 @@
             </div>
             <div class="modal-buttons">
                 <button class="btn-cancel" onclick="fecharModal('details-modal')">Cancelar</button>
+                <button class="btn-confirm" id="btn-excluir-tarefa">Excluir</button>
                 <button class="btn-primary" id="btn-salvar-edicao">Salvar</button>
             </div>
         </div>
@@ -711,16 +716,12 @@
     </div>
 
     <script>
-        // === ARMAZENAMENTO 100% LOCAL (LocalStorage) ===
-        
         let resolveModal = null; 
         let abaAtual = 'home';
         
-        // Dados Brutos Localizados
         let rawConfigs = [];
         let rawLogs = [];
 
-        // Dados Processados Globais
         let todasTarefasGlobais = [];
         let logsDeHojeGlobais = [];
         let logsSemanaGlobais = [];
@@ -734,7 +735,6 @@
         const PERIODOS_HISTORICO = ['Semanal', 'Mensal', 'Anual'];
         let indicePeriodoAtual = 1; 
 
-        // Tarefas iniciais padrão caso o LocalStorage esteja vazio
         const DEFAULT_CONFIGS = [
             { indice: 1, item: 'acordar_cedo', descricao: 'Acordar cedo e preparar o dia', detalhes: 'Planejar as prioridades principais', status_dom: 'TRUE', status_seg: 'TRUE', status_ter: 'TRUE', status_qua: 'TRUE', status_qui: 'TRUE', status_sex: 'TRUE', status_sab: 'TRUE' },
             { indice: 2, item: 'treino', descricao: 'Realizar exercício físico', detalhes: 'Corrida, natação ou ciclismo', status_dom: 'TRUE', status_seg: 'TRUE', status_ter: 'TRUE', status_qua: 'TRUE', status_qui: 'TRUE', status_sex: 'TRUE', status_sab: 'TRUE' },
@@ -805,7 +805,6 @@
             return { start, end };
         }
 
-        // --- LÓGICA DE PROCESSAMENTO LOCAL ---
         function processarDados() {
             const hoje = new Date();
             const hojeStr = hoje.toLocaleDateString('pt-BR'); 
@@ -817,11 +816,9 @@
             const currentMonth = hoje.getMonth();
             const currentYear = hoje.getFullYear();
 
-            // Configurações
             rawConfigs.sort((a, b) => (parseFloat(a.indice) || 0) - (parseFloat(b.indice) || 0));
             todasTarefasGlobais = rawConfigs;
 
-            // Logs
             const logsParsed = rawLogs.filter(l => l.status === "1").map(l => ({
                 ...l,
                 parsedDate: parseDateBR(l.data)
@@ -1128,16 +1125,23 @@
             });
 
             document.getElementById('btn-salvar-edicao').onclick = () => salvarEdicaoTarefa(tarefa.item);
+            document.getElementById('btn-excluir-tarefa').onclick = () => excluirTarefa(tarefa.item);
 
             document.getElementById('details-modal').classList.add('active');
         }
 
         function salvarEdicaoTarefa(itemOriginal) {
+            const novoItem = document.getElementById('det-tag').value.trim();
             const desc = document.getElementById('det-desc').value.trim();
             const detalhes = document.getElementById('det-detalhes').value.trim();
             
-            if(!desc) {
-                alert("A descrição não pode ficar vazia.");
+            if(!novoItem || !desc) {
+                alert("O ID (Tag) e a descrição não podem ficar vazios.");
+                return;
+            }
+
+            if(novoItem !== itemOriginal && rawConfigs.some(c => c.item === novoItem)) {
+                alert("Já existe outra tarefa com este ID/Tag.");
                 return;
             }
 
@@ -1150,12 +1154,37 @@
 
             const index = rawConfigs.findIndex(c => c.item === itemOriginal);
             if(index !== -1) {
+                rawConfigs[index].item = novoItem;
                 rawConfigs[index].descricao = desc;
                 rawConfigs[index].detalhes = detalhes;
                 Object.assign(rawConfigs[index], diasMap);
+
+                // Se o ID mudou, atualizar também nos logs para manter o histórico
+                if (novoItem !== itemOriginal) {
+                    rawLogs.forEach(l => {
+                        if (l.item === itemOriginal) l.item = novoItem;
+                    });
+                    localStorage.setItem('rotina_logs', JSON.stringify(rawLogs));
+                }
+
                 localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
                 processarDados();
             }
+        }
+
+        function excluirTarefa(item) {
+            const confirmacao = confirm(`Tem a certeza que pretende excluir a tarefa "${item}"?`);
+            if (!confirmacao) return;
+
+            fecharModal('details-modal');
+
+            // Remover da configuração e dos logs correspondentes
+            rawConfigs = rawConfigs.filter(c => c.item !== item);
+            rawLogs = rawLogs.filter(l => l.item !== item);
+
+            localStorage.setItem('rotina_configs', JSON.stringify(rawConfigs));
+            localStorage.setItem('rotina_logs', JSON.stringify(rawLogs));
+            processarDados();
         }
 
         function abrirModalConfirmacao() {
@@ -1209,7 +1238,6 @@
             }, 100);
         }
 
-        // Inicializa o app localmente
         initApp();
     </script>
 </body>
